@@ -43,7 +43,7 @@ enum {
 
 class SimpleAudio {
 public:
-	SimpleAudio(int audioType, int sample_rate = 44100, int channels = 2);
+	SimpleAudio(int audioType, int wav_bytes_per_packet = 0, int sample_rate = 44100, int channels = 2);
 	~SimpleAudio();
 
 	bool Decode(void* inbuf, int inbytes, uint8_t *outbuf, int *outbytes);
@@ -66,7 +66,7 @@ public:
 	u32 GetCtxPtr() const { return ctxPtr; }
 
 private:
-	void Init();
+	void Init(int wav_bytes_per_packet);
 	bool OpenCodec();
 
 	u32 ctxPtr;

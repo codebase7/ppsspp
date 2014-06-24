@@ -61,13 +61,14 @@ bool SimpleAudio::GetAudioCodecID(int audioType) {
 #endif // USE_FFMPEG
 }
 
-SimpleAudio::SimpleAudio(int audioType, int sample_rate, int channels)
+SimpleAudio::SimpleAudio(int audioType, int wav_bytes_per_packet, int sample_rate, int channels)
 : ctxPtr(0xFFFFFFFF), audioType(audioType), sample_rate_(sample_rate), channels_(channels), codec_(0), codecCtx_(0), swrCtx_(0), outSamples(0), srcPos(0), wanted_resample_freq(44100), extradata_(0) {
-	Init();
+	Init(wav_bytes_per_packet);
 }
 
-void SimpleAudio::Init() {
+void SimpleAudio::Init(int wav_bytes_per_packet) {
 #ifdef USE_FFMPEG
+	INFO_LOG(ME, "SimpleAudio::Init(): wav_bytes_per_packet = %i", wav_bytes_per_packet);
 	avcodec_register_all();
 	av_register_all();
 	InitFFmpeg();
@@ -95,6 +96,7 @@ void SimpleAudio::Init() {
 	codecCtx_->channels = channels_;
 	codecCtx_->channel_layout = channels_ == 2 ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
 	codecCtx_->sample_rate = sample_rate_;
+	codecCtx_->block_align = wav_bytes_per_packet;
 	OpenCodec();
 #endif  // USE_FFMPEG
 }
