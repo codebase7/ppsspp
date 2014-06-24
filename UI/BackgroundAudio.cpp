@@ -99,7 +99,8 @@ public:
 			return;
 		}
 		sample_rate = samplesPerSec;
-		decoder_ = new SimpleAudio(codec, sample_rate, num_channels);
+		// FFMPEG 2.2+ will fail to open the ATRAC3+ codec if we don't set the block alignment (e.g. raw_bytes_per_frame_). 
+		decoder_ = new SimpleAudio(codec, raw_bytes_per_frame_, sample_rate, num_channels);
 		if (codec == PSP_CODEC_AT3) {
 			decoder_->SetExtraData(&at3_extradata[2], 14, raw_bytes_per_frame_);
 		}
