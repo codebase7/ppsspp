@@ -20,6 +20,12 @@
 #include <cmath>
 #include <algorithm>
 
+// TODO: Move this somewhere else, cleanup.
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/time.h>
+#endif
+
 // TODO: Move the relevant parts into common. Don't want the core
 // to be dependent on "native", I think. Or maybe should get rid of common
 // and move everything into native...
@@ -79,6 +85,10 @@ static bool framebufIsLatched;
 static int enterVblankEvent = -1;
 static int leaveVblankEvent = -1;
 static int afterFlipEvent = -1;
+static int lagSyncEvent = -1;
+
+static double lastLagSync = 0.0;
+static bool lagSyncScheduled = false;
 
 // hCount is computed now.
 static int vCount;
@@ -93,6 +103,8 @@ static int brightnessLevel;
 static int mode;
 static int width;
 static int height;
+static bool wasPaused;
+
 // Don't include this in the state, time increases regardless of state.
 static double curFrameTime;
 static double nextFrameTime;
@@ -101,6 +113,7 @@ static int numVBlanksSinceFlip;
 static u64 frameStartTicks;
 const int hCountPerVblank = 286;
 
+const int PSP_DISPLAY_MODE_LCD = 0;
 
 std::vector<WaitVBlankInfo> vblankWaitingThreads;
 // Key is the callback id it was for, or if no callback, the thread id.
@@ -139,11 +152,20 @@ static int lastFlipsTooFrequent = 0;
 void hleEnterVblank(u64 userdata, int cyclesLate);
 void hleLeaveVblank(u64 userdata, int cyclesLate);
 void hleAfterFlip(u64 userdata, int cyclesLate);
+void hleLagSync(u64 userdata, int cyclesLate);
 
 void __DisplayVblankBeginCallback(SceUID threadID, SceUID prevCallbackId);
 void __DisplayVblankEndCallback(SceUID threadID, SceUID prevCallbackId);
 int __DisplayGetFlipCount() { return actualFlips; }
 int __DisplayGetVCount() { return vCount; }
+
+static void ScheduleLagSync(int over = 0) {
+	lagSyncScheduled = g_Config.bForceLagSync;
+	if (lagSyncScheduled) {
+		CoreTiming::ScheduleEvent(usToCycles(1000 + over), lagSyncEvent, 0);
+		lastLagSync = real_time_now();
+	}
+}
 
 void __DisplayInit() {
 	gpuStats.Reset();
@@ -162,10 +184,14 @@ void __DisplayInit() {
 	framebuf.pspFramebufLinesize = 480; // ??
 	lastFlipCycles = 0;
 	lastFlipsTooFrequent = 0;
+	wasPaused = 0;
 
 	enterVblankEvent = CoreTiming::RegisterEvent("EnterVBlank", &hleEnterVblank);
 	leaveVblankEvent = CoreTiming::RegisterEvent("LeaveVBlank", &hleLeaveVblank);
 	afterFlipEvent = CoreTiming::RegisterEvent("AfterFlip", &hleAfterFlip);
+
+	lagSyncEvent = CoreTiming::RegisterEvent("LagSync", &hleLagSync);
+	ScheduleLagSync();
 
 	CoreTiming::ScheduleEvent(msToCycles(frameMs - vblankMs), enterVblankEvent, 0);
 	isVblank = 0;
@@ -188,7 +214,7 @@ void __DisplayInit() {
 }
 
 void __DisplayDoState(PointerWrap &p) {
-	auto s = p.Section("sceDisplay", 1, 4);
+	auto s = p.Section("sceDisplay", 1, 5);
 	if (!s)
 		return;
 
@@ -224,6 +250,19 @@ void __DisplayDoState(PointerWrap &p) {
 	CoreTiming::RestoreRegisterEvent(leaveVblankEvent, "LeaveVBlank", &hleLeaveVblank);
 	p.Do(afterFlipEvent);
 	CoreTiming::RestoreRegisterEvent(afterFlipEvent, "AfterFlip", &hleAfterFlip);
+
+	if (s >= 5) {
+		p.Do(lagSyncEvent);
+		p.Do(lagSyncScheduled);
+		CoreTiming::RestoreRegisterEvent(lagSyncEvent, "LagSync", &hleLagSync);
+		lastLagSync = real_time_now();
+		if (lagSyncScheduled != g_Config.bForceLagSync) {
+			ScheduleLagSync();
+		}
+	} else {
+		lagSyncEvent = CoreTiming::RegisterEvent("LagSync", &hleLagSync);
+		ScheduleLagSync();
+	}
 
 	p.Do(gstate);
 	gstate_c.DoState(p);
@@ -448,6 +487,10 @@ static float CalculateSmoothTimestep(float lastTimestep) {
 	return summed / (float)ARRAY_SIZE(timestepSmooth);
 }
 
+void __DisplaySetWasPaused() {
+	wasPaused = true;
+}
+
 // Let's collect all the throttling and frameskipping logic here.
 void DoFrameTiming(bool &throttle, bool &skipFrame, float lastTimestep) {
 	float timestep = CalculateSmoothTimestep(lastTimestep);
@@ -460,9 +503,7 @@ void DoFrameTiming(bool &throttle, bool &skipFrame, float lastTimestep) {
 	// Check if the frameskipping code should be enabled. If neither throttling or frameskipping is on,
 	// we have nothing to do here.
 	bool doFrameSkip = g_Config.iFrameSkip != 0;
-
 	
-
 	if (!throttle && g_Config.bFrameSkipUnthrottle) {
 		doFrameSkip = true;
 		skipFrame = true;
@@ -479,14 +520,16 @@ void DoFrameTiming(bool &throttle, bool &skipFrame, float lastTimestep) {
 	time_update();
 	
 	curFrameTime = time_now_d();
-	if (nextFrameTime == 0.0)
+	if (nextFrameTime == 0.0 || wasPaused) {
 		nextFrameTime = time_now_d() + timestep;
+		if (wasPaused)
+			wasPaused = false;
+	}
 	
-	// Argh, we are falling behind! Let's skip a frame and see if we catch up.
-
 	// Auto-frameskip automatically if speed limit is set differently than the default.
 	if (g_Config.bAutoFrameSkip || (g_Config.iFrameSkip == 0 && fpsLimiter == FPS_LIMIT_CUSTOM && g_Config.iFpsLimit > 60)) {
 		// autoframeskip
+		// Argh, we are falling behind! Let's skip a frame and see if we catch up.
 		if (curFrameTime > nextFrameTime && doFrameSkip) {
 			skipFrame = true;
 		}
@@ -620,6 +663,11 @@ void hleEnterVblank(u64 userdata, int cyclesLate) {
 void hleAfterFlip(u64 userdata, int cyclesLate)
 {
 	gpu->BeginFrame();  // doesn't really matter if begin or end of frame.
+
+	// This seems like as good a time as any to check if the config changed.
+	if (lagSyncScheduled != g_Config.bForceLagSync) {
+		ScheduleLagSync();
+	}
 }
 
 void hleLeaveVblank(u64 userdata, int cyclesLate) {
@@ -631,14 +679,59 @@ void hleLeaveVblank(u64 userdata, int cyclesLate) {
 	__DisplayFireVblank();
 }
 
+void hleLagSync(u64 userdata, int cyclesLate) {
+	// The goal here is to prevent network, audio, and input lag from the real world.
+	// Our normal timing is very "stop and go".  This is efficient, but causes real world lag.
+	// This event (optionally) runs every 1ms to sync with the real world.
+
+	if (PSP_CoreParameter().unthrottle) {
+		lagSyncScheduled = false;
+		return;
+	}
+
+	float scale = 1.0f;
+	if (PSP_CoreParameter().fpsLimit == FPS_LIMIT_CUSTOM) {
+		if (g_Config.iFpsLimit == 0) {
+			lagSyncScheduled = false;
+			return;
+		}
+
+		scale = 60.0f / g_Config.iFpsLimit;
+	}
+
+	const double goal = lastLagSync + (scale / 1000.0f);
+	time_update();
+	// Don't lag too long ever, if they leave it paused.
+	while (time_now_d() < goal && goal + 0.01 > time_now_d()) {
+		const double left = goal - time_now_d();
+#ifndef _WIN32
+		usleep((long)(left * 1000000));
+#endif
+		time_update();
+	}
+
+	const int emuOver = (int)cyclesToUs(cyclesLate);
+	const int over = (int)((time_now_d() - goal) * 1000000);
+	ScheduleLagSync(over - emuOver);
+}
+
 u32 sceDisplayIsVblank() {
 	DEBUG_LOG(SCEDISPLAY,"%i=sceDisplayIsVblank()",isVblank);
 	return isVblank;
 }
 
 u32 sceDisplaySetMode(int displayMode, int displayWidth, int displayHeight) {
-	DEBUG_LOG(SCEDISPLAY,"sceDisplaySetMode(%i, %i, %i)", displayMode, displayWidth, displayHeight);
+	if (displayWidth <= 0 || displayHeight <= 0 || (displayWidth & 0x7) != 0) {
+		WARN_LOG(SCEDISPLAY, "sceDisplaySetMode INVALID SIZE (%i, %i, %i)", displayMode, displayWidth, displayHeight);
+		return SCE_KERNEL_ERROR_INVALID_SIZE;
+	}
+	
+	if (displayMode != PSP_DISPLAY_MODE_LCD) {
+		WARN_LOG(SCEDISPLAY, "sceDisplaySetMode INVALID MODE(%i, %i, %i)", displayMode, displayWidth, displayHeight);
+		return SCE_KERNEL_ERROR_INVALID_MODE;
+	}
 
+	DEBUG_LOG(SCEDISPLAY,"sceDisplaySetMode(%i, %i, %i)", displayMode, displayWidth, displayHeight);
 	if (!hasSetMode) {
 		gpu->InitClear();
 		hasSetMode = true;
@@ -753,6 +846,7 @@ u32 sceDisplayWaitVblank() {
 	} else {
 		DEBUG_LOG(SCEDISPLAY,"sceDisplayWaitVblank() - not waiting since in vBlank");
 		hleEatCycles(1110);
+		hleReSchedule("vblank wait skipped");
 		return 1;
 	}
 }
@@ -781,6 +875,7 @@ u32 sceDisplayWaitVblankCB() {
 	} else {
 		DEBUG_LOG(SCEDISPLAY,"sceDisplayWaitVblankCB() - not waiting since in vBlank");
 		hleEatCycles(1110);
+		hleReSchedule("vblank wait skipped");
 		return 1;
 	}
 }
@@ -811,6 +906,7 @@ u32 sceDisplayGetVcount() {
 	VERBOSE_LOG(SCEDISPLAY,"%i=sceDisplayGetVcount()", vCount);
 
 	hleEatCycles(150);
+	hleReSchedule("get vcount");
 	return vCount;
 }
 

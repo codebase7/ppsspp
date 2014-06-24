@@ -49,8 +49,71 @@ struct GeInterruptData
 	u32 cmd;
 };
 
-static recursive_mutex ge_pending_lock;
-static std::list<GeInterruptData> ge_pending_cb;
+template < typename T, class Alloc = std::allocator<T> >
+class ThreadSafeList {
+public:
+	explicit ThreadSafeList(const Alloc &a = Alloc()) : list(a) {}
+	explicit ThreadSafeList(std::size_t n, const T &v = T(), const Alloc &a = Alloc()) : list(n, v, a) {}
+	ThreadSafeList(const std::list<T, Alloc> &other) : list(other) {}
+	ThreadSafeList(const ThreadSafeList &other) {
+		lock_guard guard(other.lock);
+		list.assign(other.list);
+	}
+
+	template <class Iter>
+	ThreadSafeList(Iter first, Iter last, const Alloc &a = Alloc()) : list(first, last, a) {}
+
+	inline T front() const {
+		lock_guard guard(lock);
+		return list.front();
+	}
+
+	inline void pop_front() {
+		lock_guard guard(lock);
+		return list.pop_front();
+	}
+
+	inline void push_front(const T &v) {
+		lock_guard guard(lock);
+		return list.push_front(v);
+	}
+
+	inline T back() const {
+		lock_guard guard(lock);
+		return list.back();
+	}
+
+	inline void pop_back() {
+		lock_guard guard(lock);
+		return list.pop_back();
+	}
+
+	inline void push_back(const T &v) {
+		lock_guard guard(lock);
+		return list.push_back(v);
+	}
+
+	bool empty() const {
+		lock_guard guard(lock);
+		return list.empty();
+	}
+
+	inline void clear() {
+		lock_guard guard(lock);
+		return list.clear();
+	}
+
+	void DoState(PointerWrap &p) {
+		lock_guard guard(lock);
+		p.Do(list);
+	}
+
+private:
+	mutable recursive_mutex lock;
+	std::list<T, Alloc> list;
+};
+
+static ThreadSafeList<GeInterruptData> ge_pending_cb;
 static int geSyncEvent;
 static int geInterruptEvent;
 static int geCycleEvent;
@@ -66,7 +129,6 @@ public:
 
 	bool run(PendingInterrupt& pend)
 	{
-		lock_guard guard(ge_pending_lock);
 		GeInterruptData intrdata = ge_pending_cb.front();
 		DisplayList* dl = gpu->getList(intrdata.listid);
 
@@ -142,7 +204,6 @@ public:
 
 	virtual void handleResult(PendingInterrupt& pend)
 	{
-		lock_guard guard(ge_pending_lock);
 		GeInterruptData intrdata = ge_pending_cb.front();
 		ge_pending_cb.pop_front();
 
@@ -166,7 +227,9 @@ public:
 				if (newState != PSP_GE_DL_STATE_RUNNING)
 					DEBUG_LOG_REPORT(SCEGE, "GE Interrupt: newState might be %d", newState);
 
-				dl->state = PSP_GE_DL_STATE_RUNNING;
+				if (dl->state != PSP_GE_DL_STATE_NONE && dl->state != PSP_GE_DL_STATE_COMPLETED) {
+					dl->state = PSP_GE_DL_STATE_QUEUED;
+				}
 			}
 			break;
 		default:
@@ -206,7 +269,6 @@ void __GeCheckCycles(u64 userdata, int cyclesLate)
 
 void __GeInit()
 {
-	lock_guard guard(ge_pending_lock);
 	memset(&ge_used_callbacks, 0, sizeof(ge_used_callbacks));
 	ge_pending_cb.clear();
 	__RegisterIntrHandler(PSP_GE_INTR, new GeIntrHandler());
@@ -235,8 +297,6 @@ void __GeDoState(PointerWrap &p)
 	auto s = p.Section("sceGe", 1, 2);
 	if (!s)
 		return;
-
-	lock_guard guard(ge_pending_lock);
 
 	p.DoArray(ge_callback_data, ARRAY_SIZE(ge_callback_data));
 	p.DoArray(ge_used_callbacks, ARRAY_SIZE(ge_used_callbacks));
@@ -295,7 +355,6 @@ bool __GeTriggerInterrupt(int listid, u32 pc, u64 atTicks)
 	intrdata.pc = pc;
 	intrdata.cmd = Memory::ReadUnchecked_U32(pc - 4) >> 24;
 
-	lock_guard guard(ge_pending_lock);
 	ge_pending_cb.push_back(intrdata);
 
 	u64 userdata = (u64)listid << 32 | (u64) pc;
@@ -333,9 +392,9 @@ bool __GeTriggerWait(WaitType waitType, SceUID waitId, WaitingThreadList &waitin
 bool __GeTriggerWait(GPUSyncType type, SceUID waitId)
 {
 	// We check for the old type for old savestate compatibility.
-	if (type == GPU_SYNC_DRAW || type == WAITTYPE_GEDRAWSYNC)
+	if (type == GPU_SYNC_DRAW || (WaitType)type == WAITTYPE_GEDRAWSYNC)
 		return __GeTriggerWait(WAITTYPE_GEDRAWSYNC, waitId, drawWaitingThreads);
-	else if (type == GPU_SYNC_LIST || type == WAITTYPE_GELISTSYNC)
+	else if (type == GPU_SYNC_LIST || (WaitType)type == WAITTYPE_GELISTSYNC)
 		return __GeTriggerWait(WAITTYPE_GELISTSYNC, waitId, listWaitingThreads[waitId]);
 	else
 		ERROR_LOG_REPORT(SCEGE, "__GeTriggerWait: bad wait type");
@@ -433,7 +492,10 @@ u32 sceGeDrawSync(u32 mode)
 int sceGeContinue()
 {
 	DEBUG_LOG(SCEGE, "sceGeContinue");
-	return gpu->Continue();
+	int ret = gpu->Continue();
+	hleEatCycles(220);
+	hleReSchedule("ge continue");
+	return ret;
 }
 
 int sceGeBreak(u32 mode, u32 unknownPtr)

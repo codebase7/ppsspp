@@ -82,7 +82,7 @@ public:
 
 static std::map<u32, Mp3Context *> mp3Map_old;
 static std::map<u32, AuCtx *> mp3Map;
-
+static const int mp3DecodeDelay = 4000;
 
 AuCtx *getMp3Ctx(u32 mp3) {
 	if (mp3Map.find(mp3) == mp3Map.end())
@@ -145,8 +145,13 @@ int sceMp3Decode(u32 mp3, u32 outPcmPtr) {
 		ERROR_LOG(ME, "%s: bad mp3 handle %08x", __FUNCTION__, mp3);
 		return -1;
 	}
-
-	return ctx->AuDecode(outPcmPtr);
+		
+	int pcmBytes = ctx->AuDecode(outPcmPtr);
+	if (!pcmBytes) {
+		// decode data successfully, delay thread
+		hleDelayResult(pcmBytes, "mp3 decode", mp3DecodeDelay);
+	}
+	return pcmBytes;
 }
 
 int sceMp3ResetPlayPosition(u32 mp3) {
@@ -188,7 +193,7 @@ u32 sceMp3ReserveMp3Handle(u32 mp3Addr) {
 	Au->PCMBuf = Memory::Read_U32(mp3Addr + 24);            // Output PCM data buffer.
 	Au->PCMBufSize = Memory::Read_U32(mp3Addr + 28);        // Output PCM data buffer size.
 
-	DEBUG_LOG(ME, "startPos %x endPos %x mp3buf %08x mp3bufSize %08x PCMbuf %08x PCMbufSize %08x",
+	DEBUG_LOG(ME, "startPos %llx endPos %llx mp3buf %08x mp3bufSize %08x PCMbuf %08x PCMbufSize %08x",
 		Au->startPos, Au->endPos, Au->AuBuf, Au->AuBufSize, Au->PCMBuf, Au->PCMBufSize);
 
 	Au->audioType = PSP_CODEC_MP3;
@@ -315,8 +320,8 @@ int sceMp3Init(u32 mp3) {
 	}
 
 	// Parse the Mp3 header
-	bool isID3 = false;
-	int header = __ParseMp3Header(ctx, &isID3);
+	bool hasID3Tag = false;
+	int header = __ParseMp3Header(ctx, &hasID3Tag);
 	int layer = (header >> 17) & 0x3;
 	ctx->Version = ((header >> 19) & 0x3);
 	ctx->SamplingRate = __CalculateMp3SampleRates((header >> 10) & 0x3, ctx->Version);
@@ -326,25 +331,18 @@ int sceMp3Init(u32 mp3) {
 
 	INFO_LOG(ME, "sceMp3Init(): channels=%i, samplerate=%iHz, bitrate=%ikbps", ctx->Channels, ctx->SamplingRate, ctx->BitRate);
 
-	// Read information from source via ffmpeg and re-create codec context
-	// This is an automatic method without knowledge in audio file format
-	// ctx->AuCreateCodecContextFromSource();
-	// INFO_LOG(ME, "sceMp3Init() ffmpeg: channels=%i, samplerate=%iHz, bitrate=%ikbps", ctx->Channels, ctx->SamplingRate, ctx->BitRate);
-
 	// for mp3, if required freq is 48000, reset resampling Frequency to 48000 seems get better sound quality (e.g. Miku Custom BGM)
-	if (ctx->freq == 48000){
-		ctx->decoder->setResampleFrequency(ctx->freq);
+	if (ctx->freq == 48000) {
+		ctx->decoder->SetResampleFrequency(ctx->freq);
 	}
 
 	// For mp3 file, if ID3 tag is detected, we must move startPos to 0x400 (stream start position), remove 0x400 bytes of the sourcebuff, and reduce the available buffer size by 0x400
 	// this is very important for ID3 tag mp3, since our universal audio decoder is for decoding stream part only.
-	if (isID3){
+	if (hasID3Tag) {
 		// if get ID3 tage, we will decode from 0x400
 		ctx->startPos = 0x400;
-		ctx->sourcebuff.erase(0, 0x400);
-		ctx->AuBufAvailable -= 0x400;
-	}
-	else{
+		ctx->EatSourceBuff(0x400);
+	} else {
 		// if no ID3 tag, we will decode from the begining of the file
 		ctx->startPos = 0;
 	}
@@ -364,8 +362,7 @@ int sceMp3GetLoopNum(u32 mp3) {
 	return ctx->AuGetLoopNum();
 }
 
-int sceMp3GetMaxOutputSample(u32 mp3)
-{
+int sceMp3GetMaxOutputSample(u32 mp3) {
 	DEBUG_LOG(ME, "sceMp3GetMaxOutputSample(%08x)", mp3);
 	AuCtx *ctx = getMp3Ctx(mp3);
 	if (!ctx) {
@@ -399,6 +396,7 @@ int sceMp3SetLoopNum(u32 mp3, int loop) {
 
 	return ctx->AuSetLoopNum(loop);
 }
+
 int sceMp3GetMp3ChannelNum(u32 mp3) {
 	INFO_LOG(ME, "sceMp3GetMp3ChannelNum(%08X)", mp3);
 
@@ -410,6 +408,7 @@ int sceMp3GetMp3ChannelNum(u32 mp3) {
 
 	return ctx->AuGetChannelNum();
 }
+
 int sceMp3GetBitRate(u32 mp3) {
 	INFO_LOG(ME, "sceMp3GetBitRate(%08X)", mp3);
 
@@ -421,6 +420,7 @@ int sceMp3GetBitRate(u32 mp3) {
 
 	return ctx->AuGetBitRate();
 }
+
 int sceMp3GetSamplingRate(u32 mp3) {
 	INFO_LOG(ME, "sceMp3GetSamplingRate(%08X)", mp3);
 
@@ -546,7 +546,7 @@ u32 sceMp3LowLevelDecode(u32 mp3, u32 sourceAddr, u32 sourceBytesConsumedAddr, u
 	}
 
 	if (!Memory::IsValidAddress(sourceAddr) || !Memory::IsValidAddress(sourceBytesConsumedAddr) ||
-		!Memory::IsValidAddress(samplesAddr) || !Memory::IsValidAddress(sampleBytesAddr)){
+		!Memory::IsValidAddress(samplesAddr) || !Memory::IsValidAddress(sampleBytesAddr)) {
 		ERROR_LOG(ME, "sceMp3LowLevelDecode(%08x, %08x, %08x, %08x, %08x) : invalid address in args", mp3, sourceAddr, sourceBytesConsumedAddr, samplesAddr, sampleBytesAddr);
 		return -1;
 	}
@@ -555,9 +555,9 @@ u32 sceMp3LowLevelDecode(u32 mp3, u32 sourceAddr, u32 sourceBytesConsumedAddr, u
 	auto outbuff = Memory::GetPointer(samplesAddr);
 	
 	int outpcmbytes = 0;
-	ctx->decoder->Decode((void*)inbuff,4096,outbuff,&outpcmbytes);
+	ctx->decoder->Decode((void*)inbuff, 4096, outbuff, &outpcmbytes);
 	
-	Memory::Write_U32(ctx->decoder->getSourcePos(), sourceBytesConsumedAddr);
+	Memory::Write_U32(ctx->decoder->GetSourcePos(), sourceBytesConsumedAddr);
 	Memory::Write_U32(outpcmbytes, sampleBytesAddr);
 	return 0;
 }

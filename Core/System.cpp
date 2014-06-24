@@ -72,10 +72,11 @@ enum CPUThreadState {
 
 MetaFileSystem pspFileSystem;
 ParamSFOData g_paramSFO;
-GlobalUIState globalUIState;
+static GlobalUIState globalUIState;
 static CoreParameter coreParameter;
 static PSPMixer *mixer;
 static std::thread *cpuThread = NULL;
+static std::thread::id cpuThreadID;
 static recursive_mutex cpuThreadLock;
 static condition_variable cpuThreadCond;
 static condition_variable cpuThreadReplyCond;
@@ -95,12 +96,16 @@ void UpdateUIState(GlobalUIState newState) {
 	}
 }
 
+GlobalUIState GetUIState() {
+	return globalUIState;
+}
+
 bool IsAudioInitialised() {
 	return mixer != NULL;
 }
 
 void Audio_Init() {
-	if(mixer == NULL) {
+	if (mixer == NULL) {
 		mixer = new PSPMixer();
 		host->InitSound(mixer);
 	}
@@ -108,7 +113,7 @@ void Audio_Init() {
 
 bool IsOnSeparateCPUThread() {
 	if (cpuThread != NULL) {
-		return cpuThread->get_id() == std::this_thread::get_id();
+		return cpuThreadID == std::this_thread::get_id();
 	} else {
 		return false;
 	}
@@ -336,6 +341,7 @@ bool PSP_InitStart(const CoreParameter &coreParam, std::string *error_string) {
 		XSetThreadProcessor(cpuThread->native_handle(), 2);
 		ResumeThread(cpuThread->native_handle());
 #endif
+		cpuThreadID = cpuThread->get_id();
 		cpuThread->detach();
 	} else {
 		CPU_Init();
@@ -411,11 +417,11 @@ void PSP_Shutdown() {
 		CPU_WaitStatus(cpuThreadReplyCond, &CPU_IsShutdown);
 		delete cpuThread;
 		cpuThread = 0;
+		cpuThreadID = std::thread::id();
 	} else {
 		CPU_Shutdown();
 	}
 	GPU_Shutdown();
-	resetAudioList();
 	host->SetWindowTitle(0);
 	currentMIPS = 0;
 	pspIsInited = false;
@@ -448,6 +454,8 @@ void PSP_RunLoopUntil(u64 globalticks) {
 	} else {
 		mipsr4k.RunLoopUntil(globalticks);
 	}
+
+	gpu->CleanupBeforeUI();
 }
 
 void PSP_RunLoopFor(int cycles) {

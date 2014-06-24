@@ -67,9 +67,9 @@ static const CommandTableEntry commandTable[] = {
 	{GE_CMD_ZBUFWIDTH, FLAG_FLUSHBEFOREONCHANGE},
 
 	// Changes that dirty uniforms
-	{GE_CMD_FOGCOLOR, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_FOG1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_FOG2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_FOGCOLOR, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_FogColor},
+	{GE_CMD_FOG1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_FogCoef},
+	{GE_CMD_FOG2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_FogCoef},
 
 	// Should these maybe flush?
 	{GE_CMD_MINZ, FLAG_FLUSHBEFOREONCHANGE},
@@ -123,10 +123,10 @@ static const CommandTableEntry commandTable[] = {
 	{GE_CMD_TEXSHADELS, FLAG_FLUSHBEFOREONCHANGE},
 	{GE_CMD_SHADEMODE, FLAG_FLUSHBEFOREONCHANGE},
 	{GE_CMD_TEXFUNC, FLAG_FLUSHBEFOREONCHANGE},
-	{GE_CMD_COLORTEST, FLAG_FLUSHBEFOREONCHANGE, &GLES_GPU::Execute_ColorTest},
+	{GE_CMD_COLORTEST, FLAG_FLUSHBEFOREONCHANGE},
 	{GE_CMD_ALPHATESTENABLE, FLAG_FLUSHBEFOREONCHANGE},
 	{GE_CMD_COLORTESTENABLE, FLAG_FLUSHBEFOREONCHANGE},
-	{GE_CMD_COLORTESTMASK, FLAG_FLUSHBEFOREONCHANGE, &GLES_GPU::Execute_ColorTest},
+	{GE_CMD_COLORTESTMASK, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_ColorTestMask},
 
 	// These change the vertex shader so need flushing.
 	{GE_CMD_REVERSENORMAL, FLAG_FLUSHBEFOREONCHANGE},  // TODO: This one is actually processed during vertex decoding which is wrong.
@@ -222,68 +222,68 @@ static const CommandTableEntry commandTable[] = {
 	{GE_CMD_MATERIALSPECULAR, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_MaterialSpecular},
 	{GE_CMD_MATERIALSPECULARCOEF, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_MaterialSpecular},
 
-	// These precompute a value. not sure if worth it. Also dirty uniforms, which could be table-ized to avoid execute.
-	{GE_CMD_LX0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LY0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LZ0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LX1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LY1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LZ1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LX2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LY2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LZ2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LX3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LY3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LZ3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	// These dirty uniforms, which could be table-ized to avoid execute.
+	{GE_CMD_LX0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LY0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LZ0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LX1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LY1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LZ1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LX2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LY2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LZ2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LX3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LY3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LZ3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
-	{GE_CMD_LDX0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDY0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDZ0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDX1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDY1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDZ1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDX2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDY2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDZ2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDX3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDY3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDZ3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_LDX0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LDY0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LDZ0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LDX1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LDY1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LDZ1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LDX2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LDY2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LDZ2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LDX3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LDY3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LDZ3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
-	{GE_CMD_LKA0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKB0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKA1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKB1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKA2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKB2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKA3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKB3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_LKA0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LKB0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LKC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LKA1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LKB1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LKC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LKA2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LKB2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LKC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LKA3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LKB3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LKC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
-	{GE_CMD_LKS0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKS1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKS2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKS3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_LKS0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LKS1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LKS2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LKS3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
-	{GE_CMD_LKO0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKO1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKO2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LKO3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_LKO0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LKO1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LKO2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LKO3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
-	{GE_CMD_LAC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LSC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LAC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LSC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LAC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LSC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LAC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LDC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
-	{GE_CMD_LSC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE},
+	{GE_CMD_LAC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LDC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LSC0, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light0Param},
+	{GE_CMD_LAC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LDC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LSC1, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light1Param},
+	{GE_CMD_LAC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LDC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LSC2, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light2Param},
+	{GE_CMD_LAC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LDC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
+	{GE_CMD_LSC3, FLAG_FLUSHBEFOREONCHANGE | FLAG_EXECUTEONCHANGE, &GLES_GPU::Execute_Light3Param},
 
 	// Ignored commands
 	{GE_CMD_CLIPENABLE, 0},
@@ -347,6 +347,18 @@ static const CommandTableEntry commandTable[] = {
 	{GE_CMD_BONEMATRIXNUMBER,  FLAG_EXECUTE | FLAG_READS_PC | FLAG_WRITES_PC, &GLES_GPU::Execute_BoneMtxNum},
 	{GE_CMD_BONEMATRIXDATA,    FLAG_EXECUTE, &GLES_GPU::Execute_BoneMtxData},
 
+	// Vertex Screen/Texture/Color
+	{GE_CMD_VSCX, FLAG_EXECUTE},
+	{GE_CMD_VSCY, FLAG_EXECUTE},
+	{GE_CMD_VSCZ, FLAG_EXECUTE},
+	{GE_CMD_VTCS, FLAG_EXECUTE},
+	{GE_CMD_VTCT, FLAG_EXECUTE},
+	{GE_CMD_VTCQ, FLAG_EXECUTE},
+	{GE_CMD_VCV, FLAG_EXECUTE},
+	{GE_CMD_VAP, FLAG_EXECUTE},
+	{GE_CMD_VFC, FLAG_EXECUTE},
+	{GE_CMD_VSCV, FLAG_EXECUTE},
+
 	// "Missing" commands (gaps in the sequence)
 	{GE_CMD_UNKNOWN_03, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_0D, FLAG_EXECUTE},
@@ -365,16 +377,6 @@ static const CommandTableEntry commandTable[] = {
 	{GE_CMD_UNKNOWN_D1, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_ED, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_EF, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F0, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F1, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F2, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F3, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F4, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F5, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F6, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F7, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F8, FLAG_EXECUTE},
-	{GE_CMD_UNKNOWN_F9, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_FA, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_FB, FLAG_EXECUTE},
 	{GE_CMD_UNKNOWN_FC, FLAG_EXECUTE},
@@ -389,25 +391,19 @@ GLES_GPU::CommandInfo GLES_GPU::cmdInfo_[256];
 
 GLES_GPU::GLES_GPU()
 : resized_(false) {
-#ifdef _WIN32
-	lastVsync_ = g_Config.bVSync ? 1 : 0;
-	// Disabled EXT_swap_control_tear for now, it never seems to settle at the correct timing
-	// so it just keeps tearing. Not what I hoped for...
-	//if (false && gl_extensions.EXT_swap_control_tear) {
-		// See http://developer.download.nvidia.com/opengl/specs/WGL_EXT_swap_control_tear.txt
-	//	glstate.SetVSyncInterval(g_Config.bVSync ? -1 :0);
-	//} else {
-		glstate.SetVSyncInterval(g_Config.bVSync ? 1 : 0);
-	//}
-#endif
+	UpdateVsyncInterval(true);
 
 	shaderManager_ = new ShaderManager();
 	transformDraw_.SetShaderManager(shaderManager_);
 	transformDraw_.SetTextureCache(&textureCache_);
 	transformDraw_.SetFramebufferManager(&framebufferManager_);
+	framebufferManager_.Init();
 	framebufferManager_.SetTextureCache(&textureCache_);
 	framebufferManager_.SetShaderManager(shaderManager_);
+	framebufferManager_.SetTransformDrawEngine(&transformDraw_);
 	textureCache_.SetFramebufferManager(&framebufferManager_);
+	textureCache_.SetDepalShaderCache(&depalShaderCache_);
+	textureCache_.SetShaderManager(shaderManager_);
 
 	// Sanity check gstate
 	if ((int *)&gstate.transferstart - (int *)&gstate != 0xEA) {
@@ -452,12 +448,16 @@ GLES_GPU::GLES_GPU()
 	}
 
 	BuildReportingInfo();
+	// Update again after init to be sure of any silly driver problems.
+	UpdateVsyncInterval(true);
 }
 
 GLES_GPU::~GLES_GPU() {
 	framebufferManager_.DestroyAllFBOs();
 	shaderManager_->ClearCache(true);
+	depalShaderCache_.Clear();
 	delete shaderManager_;
+	glstate.SetVSyncInterval(0);
 }
 
 // Let's avoid passing nulls into snprintf().
@@ -493,7 +493,10 @@ void GLES_GPU::DeviceLost() {
 	// TransformDraw has registered as a GfxResourceHolder.
 	shaderManager_->ClearCache(false);
 	textureCache_.Clear(false);
+	depalShaderCache_.Clear();
 	framebufferManager_.DeviceLost();
+
+	UpdateVsyncInterval(true);
 }
 
 void GLES_GPU::InitClear() {
@@ -519,17 +522,24 @@ void GLES_GPU::BeginFrame() {
 	ScheduleEvent(GPU_EVENT_BEGIN_FRAME);
 }
 
-void GLES_GPU::BeginFrameInternal() {
+inline void GLES_GPU::UpdateVsyncInterval(bool force) {
 #ifdef _WIN32
-	// Turn off vsync when unthrottled
 	int desiredVSyncInterval = g_Config.bVSync ? 1 : 0;
-	if ((PSP_CoreParameter().unthrottle) || (PSP_CoreParameter().fpsLimit == 1))
+	if (PSP_CoreParameter().unthrottle) {
 		desiredVSyncInterval = 0;
-	if (desiredVSyncInterval != lastVsync_) {
+	}
+	if (PSP_CoreParameter().fpsLimit == 1) {
+		// For an alternative speed that is a clean factor of 60, the user probably still wants vsync.
+		if (g_Config.iFpsLimit == 0 || (g_Config.iFpsLimit != 15 && g_Config.iFpsLimit != 30 && g_Config.iFpsLimit != 60)) {
+			desiredVSyncInterval = 0;
+		}
+	}
+
+	if (desiredVSyncInterval != lastVsync_ || force) {
 		// Disabled EXT_swap_control_tear for now, it never seems to settle at the correct timing
 		// so it just keeps tearing. Not what I hoped for...
-		//if (false && gl_extensions.EXT_swap_control_tear) {
-			// See http://developer.download.nvidia.com/opengl/specs/WGL_EXT_swap_control_tear.txt
+		//if (gl_extensions.EXT_swap_control_tear) {
+		//	// See http://developer.download.nvidia.com/opengl/specs/WGL_EXT_swap_control_tear.txt
 		//	glstate.SetVSyncInterval(-desiredVSyncInterval);
 		//} else {
 			glstate.SetVSyncInterval(desiredVSyncInterval);
@@ -537,9 +547,15 @@ void GLES_GPU::BeginFrameInternal() {
 		lastVsync_ = desiredVSyncInterval;
 	}
 #endif
+}
+
+void GLES_GPU::BeginFrameInternal() {
+	UpdateVsyncInterval(resized_);
+	resized_ = false;
 
 	textureCache_.StartFrame();
 	transformDraw_.DecimateTrackedVertexArrays();
+	depalShaderCache_.Decimate();
 
 	if (dumpNextFrame_) {
 		NOTICE_LOG(G3D, "DUMPING THIS FRAME");
@@ -596,15 +612,17 @@ void GLES_GPU::CopyDisplayToOutput() {
 }
 
 void GLES_GPU::CopyDisplayToOutputInternal() {
+	// Flush anything left over.
+	framebufferManager_.RebindFramebuffer();
+	transformDraw_.Flush();
+
+	shaderManager_->DirtyLastShader();
+
 	glstate.depthWrite.set(GL_TRUE);
 	glstate.colorMask.set(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
-	transformDraw_.Flush();
-
 	framebufferManager_.CopyDisplayToOutput();
 	framebufferManager_.EndFrame();
-
-	shaderManager_->DirtyLastShader();
 
 	// If buffered, discard the depth buffer of the backbuffer. Don't even know if we need one.
 #if 0
@@ -657,6 +675,18 @@ void GLES_GPU::ProcessEvent(GPUEvent ev) {
 
 	case GPU_EVENT_INVALIDATE_CACHE:
 		InvalidateCacheInternal(ev.invalidate_cache.addr, ev.invalidate_cache.size, ev.invalidate_cache.type);
+		break;
+
+	case GPU_EVENT_FB_MEMCPY:
+		PerformMemoryCopyInternal(ev.fb_memcpy.dst, ev.fb_memcpy.src, ev.fb_memcpy.size);
+		break;
+
+	case GPU_EVENT_FB_MEMSET:
+		PerformMemorySetInternal(ev.fb_memset.dst, ev.fb_memset.v, ev.fb_memset.size);
+		break;
+
+	case GPU_EVENT_FB_STENCIL_UPLOAD:
+		PerformStencilUploadInternal(ev.fb_stencil_upload.dst, ev.fb_stencil_upload.size);
 		break;
 
 	default:
@@ -750,7 +780,7 @@ void GLES_GPU::Execute_Prim(u32 op, u32 diff) {
 	}
 #endif
 
-	int bytesRead;
+	int bytesRead = 0;
 	transformDraw_.SubmitPrim(verts, inds, prim, count, gstate.vertType, &bytesRead);
 
 	int vertexCost = transformDraw_.EstimatePerVertexCost();
@@ -759,7 +789,7 @@ void GLES_GPU::Execute_Prim(u32 op, u32 diff) {
 
 	// After drawing, we advance the vertexAddr (when non indexed) or indexAddr (when indexed).
 	// Some games rely on this, they don't bother reloading VADDR and IADDR.
-	// Q: Are these changed reflected in the real registers? Needs testing.
+	// The VADDR/IADDR registers are NOT updated.
 	if (inds) {
 		int indexSize = 1;
 		if ((gstate.vertType & GE_VTYPE_IDX_MASK) == GE_VTYPE_IDX_16BIT)
@@ -986,6 +1016,19 @@ void GLES_GPU::Execute_TexEnvColor(u32 op, u32 diff) {
 	shaderManager_->DirtyUniform(DIRTY_TEXENV);
 }
 
+void GLES_GPU::Execute_TexLevel(u32 op, u32 diff) {
+	// I had hoped that this would let us avoid excessively flushing in Gran Turismo, but not so,
+	// as the game switches rapidly between modes 0 and 1.
+	/*
+	if (gstate.getTexLevelMode() == GE_TEXLEVEL_MODE_CONST) {
+		gstate.texlevel ^= diff;
+		Flush();
+		gstate.texlevel ^= diff;
+	}
+	*/
+	gstate_c.textureChanged |= TEXCHANGE_PARAMSONLY;
+}
+
 void GLES_GPU::Execute_LoadClut(u32 op, u32 diff) {
 	gstate_c.textureChanged |= TEXCHANGE_PARAMSONLY;
 	textureCache_.LoadClut();
@@ -1017,16 +1060,37 @@ void GLES_GPU::Execute_MaterialSpecular(u32 op, u32 diff) {
 	shaderManager_->DirtyUniform(DIRTY_MATSPECULAR);
 }
 
-void GLES_GPU::Execute_ColorTest(u32 op, u32 diff) {
-	shaderManager_->DirtyUniform(DIRTY_COLORMASK);
+void GLES_GPU::Execute_Light0Param(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_LIGHT0);
+}
+
+void GLES_GPU::Execute_Light1Param(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_LIGHT1);
+}
+
+void GLES_GPU::Execute_Light2Param(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_LIGHT2);
+}
+
+void GLES_GPU::Execute_Light3Param(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_LIGHT3);
+}
+
+void GLES_GPU::Execute_FogColor(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_FOGCOLOR);
+}
+
+void GLES_GPU::Execute_FogCoef(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_FOGCOEF);
+}
+
+void GLES_GPU::Execute_ColorTestMask(u32 op, u32 diff) {
+	shaderManager_->DirtyUniform(DIRTY_ALPHACOLORMASK);
 }
 
 void GLES_GPU::Execute_AlphaTest(u32 op, u32 diff) {
-#ifndef MOBILE_DEVICE
-	if (((op >> 16) & 0xFF) != 0xFF && (op & 7) > 1)
-		WARN_LOG_REPORT_ONCE(alphatestmask, G3D, "Unsupported alphatest mask: %02x", (op >> 16) & 0xFF);
-#endif
 	shaderManager_->DirtyUniform(DIRTY_ALPHACOLORREF);
+	shaderManager_->DirtyUniform(DIRTY_ALPHACOLORMASK);
 }
 
 void GLES_GPU::Execute_StencilTest(u32 op, u32 diff) {
@@ -1264,18 +1328,6 @@ void GLES_GPU::Execute_BlockTransferStart(u32 op, u32 diff) {
 	gstate_c.textureChanged = TEXCHANGE_UPDATED;
 }
 
-void GLES_GPU::Execute_TexLevel(u32 op, u32 diff) {
-	// I had hoped that this would let us avoid excessively flushing in Gran Turismo, but not so,
-	// as the game switches rapidly between modes 0 and 1.
-	/*
-	if (gstate.getTexLevelMode() == GE_TEXLEVEL_MODE_CONST) {
-		gstate.texlevel ^= diff;
-		Flush();
-		gstate.texlevel ^= diff;
-	}
-	*/
-	gstate_c.textureChanged |= TEXCHANGE_PARAMSONLY;
-}
 void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 	u32 cmd = op >> 24;
 	u32 data = op & 0xFFFFFF;
@@ -1335,12 +1387,12 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 		break;
 
 	case GE_CMD_FOGCOLOR:
-		shaderManager_->DirtyUniform(DIRTY_FOGCOLOR);
+		Execute_FogColor(op, diff);
 		break;
 
 	case GE_CMD_FOG1:
 	case GE_CMD_FOG2:
-		shaderManager_->DirtyUniform(DIRTY_FOGCOEF);
+		Execute_FogCoef(op, diff);
 		break;
 
 	case GE_CMD_FOGENABLE:
@@ -1498,81 +1550,44 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 		break;
 
 	case GE_CMD_LX0:case GE_CMD_LY0:case GE_CMD_LZ0:
-	case GE_CMD_LX1:case GE_CMD_LY1:case GE_CMD_LZ1:
-	case GE_CMD_LX2:case GE_CMD_LY2:case GE_CMD_LZ2:
-	case GE_CMD_LX3:case GE_CMD_LY3:case GE_CMD_LZ3:
-		{
-			int n = cmd - GE_CMD_LX0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightpos[l][c] = getFloat24(data);
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
 	case GE_CMD_LDX0:case GE_CMD_LDY0:case GE_CMD_LDZ0:
-	case GE_CMD_LDX1:case GE_CMD_LDY1:case GE_CMD_LDZ1:
-	case GE_CMD_LDX2:case GE_CMD_LDY2:case GE_CMD_LDZ2:
-	case GE_CMD_LDX3:case GE_CMD_LDY3:case GE_CMD_LDZ3:
-		{
-			int n = cmd - GE_CMD_LDX0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightdir[l][c] = getFloat24(data);
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
 	case GE_CMD_LKA0:case GE_CMD_LKB0:case GE_CMD_LKC0:
+	case GE_CMD_LKS0:  // spot coef ("conv")
+	case GE_CMD_LKO0: // light angle ("cutoff")
+	case GE_CMD_LAC0:
+	case GE_CMD_LDC0:
+	case GE_CMD_LSC0:
+		Execute_Light0Param(op, diff);
+		break;
+	case GE_CMD_LX1:case GE_CMD_LY1:case GE_CMD_LZ1:
+	case GE_CMD_LDX1:case GE_CMD_LDY1:case GE_CMD_LDZ1:
 	case GE_CMD_LKA1:case GE_CMD_LKB1:case GE_CMD_LKC1:
-	case GE_CMD_LKA2:case GE_CMD_LKB2:case GE_CMD_LKC2:
-	case GE_CMD_LKA3:case GE_CMD_LKB3:case GE_CMD_LKC3:
-		{
-			int n = cmd - GE_CMD_LKA0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightatt[l][c] = getFloat24(data);
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
-	case GE_CMD_LKS0:
 	case GE_CMD_LKS1:
-	case GE_CMD_LKS2:
-	case GE_CMD_LKS3:
-		{
-			int l = cmd - GE_CMD_LKS0;
-			gstate_c.lightspotCoef[l] = getFloat24(data);
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
-	case GE_CMD_LKO0:
 	case GE_CMD_LKO1:
-	case GE_CMD_LKO2:
-	case GE_CMD_LKO3:
-		{
-			int l = cmd - GE_CMD_LKO0;
-			gstate_c.lightangle[l] = getFloat24(data);
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
+	case GE_CMD_LAC1:
+	case GE_CMD_LDC1:
+	case GE_CMD_LSC1:
+		Execute_Light1Param(op, diff);
 		break;
-
-	case GE_CMD_LAC0:case GE_CMD_LAC1:case GE_CMD_LAC2:case GE_CMD_LAC3:
-	case GE_CMD_LDC0:case GE_CMD_LDC1:case GE_CMD_LDC2:case GE_CMD_LDC3:
-	case GE_CMD_LSC0:case GE_CMD_LSC1:case GE_CMD_LSC2:case GE_CMD_LSC3:
-		{
-			float r = (float)(data & 0xff) * (1.0f / 255.0f);
-			float g = (float)((data >> 8) & 0xff) * (1.0f / 255.0f);
-			float b = (float)(data >> 16) * (1.0f / 255.0f);
-
-			int l = (cmd - GE_CMD_LAC0) / 3;
-			int t = (cmd - GE_CMD_LAC0) % 3;
-			gstate_c.lightColor[t][l][0] = r;
-			gstate_c.lightColor[t][l][1] = g;
-			gstate_c.lightColor[t][l][2] = b;
-			shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
+	case GE_CMD_LX2:case GE_CMD_LY2:case GE_CMD_LZ2:
+	case GE_CMD_LDX2:case GE_CMD_LDY2:case GE_CMD_LDZ2:
+	case GE_CMD_LKA2:case GE_CMD_LKB2:case GE_CMD_LKC2:
+	case GE_CMD_LKS2:
+	case GE_CMD_LKO2:
+	case GE_CMD_LAC2:
+	case GE_CMD_LDC2:
+	case GE_CMD_LSC2:
+		Execute_Light2Param(op, diff);
+		break;
+	case GE_CMD_LX3:case GE_CMD_LY3:case GE_CMD_LZ3:
+	case GE_CMD_LDX3:case GE_CMD_LDY3:case GE_CMD_LDZ3:
+	case GE_CMD_LKA3:case GE_CMD_LKB3:case GE_CMD_LKC3:
+	case GE_CMD_LKS3:
+	case GE_CMD_LKO3:
+	case GE_CMD_LAC3:
+	case GE_CMD_LDC3:
+	case GE_CMD_LSC3:
+		Execute_Light3Param(op, diff);
 		break;
 
 	case GE_CMD_VIEWPORTX1:
@@ -1613,6 +1628,8 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 	//////////////////////////////////////////////////////////////////
 	case GE_CMD_ALPHABLENDENABLE:
 	case GE_CMD_BLENDMODE:
+		break;
+
 	case GE_CMD_BLENDFIXEDA:
 	case GE_CMD_BLENDFIXEDB:
 		break;
@@ -1623,8 +1640,10 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 		break;
 
 	case GE_CMD_COLORTEST:
+		break;
+
 	case GE_CMD_COLORTESTMASK:
-		Execute_ColorTest(op, diff);
+		Execute_ColorTestMask(op, diff);
 		break;
 
 	case GE_CMD_ALPHATEST:
@@ -1754,6 +1773,57 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 	case GE_CMD_REVERSENORMAL:
 		break;
 
+	case GE_CMD_VSCX:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vscx, G3D, "Unsupported Vertex Screen Coordinate X : %06x", data);
+		break;
+
+	case GE_CMD_VSCY:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vscy, G3D, "Unsupported Vertex Screen Coordinate Y : %06x", data);
+		break;
+
+	case GE_CMD_VSCZ:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vscz, G3D, "Unsupported Vertex Screen Coordinate Z : %06x", data);
+		break;
+
+	case GE_CMD_VTCS:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vtcs, G3D, "Unsupported Vertex Texture Coordinate S : %06x", data);
+		break;
+
+	case GE_CMD_VTCT:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vtct, G3D, "Unsupported Vertex Texture Coordinate T : %06x", data);
+		break;
+
+	case GE_CMD_VTCQ:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vtcq, G3D, "Unsupported Vertex Texture Coordinate Q : %06x", data);
+		break;
+
+	case GE_CMD_VCV:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vcv, G3D, "Unsupported Vertex Color Value : %06x", data);
+		break;
+
+	case GE_CMD_VAP:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vap, G3D, "Unsupported Vertex Alpha and Primitive : %06x", data);
+		break;
+
+	case GE_CMD_VFC:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vfc, G3D, "Unsupported Vertex Fog Coefficient : %06x", data);
+		break;
+
+	case GE_CMD_VSCV:
+		if (data != 0)
+			WARN_LOG_REPORT_ONCE(vscv, G3D, "Unsupported Vertex Secondary Color Value : %06x", data);
+		break;
+
+
 	case GE_CMD_UNKNOWN_03: 
 	case GE_CMD_UNKNOWN_0D:
 	case GE_CMD_UNKNOWN_11:
@@ -1771,16 +1841,6 @@ void GLES_GPU::ExecuteOpInternal(u32 op, u32 diff) {
 	case GE_CMD_UNKNOWN_D1:
 	case GE_CMD_UNKNOWN_ED:
 	case GE_CMD_UNKNOWN_EF:
-	case GE_CMD_UNKNOWN_F0:
-	case GE_CMD_UNKNOWN_F1:
-	case GE_CMD_UNKNOWN_F2:
-	case GE_CMD_UNKNOWN_F3:
-	case GE_CMD_UNKNOWN_F4:
-	case GE_CMD_UNKNOWN_F5:
-	case GE_CMD_UNKNOWN_F6:
-	case GE_CMD_UNKNOWN_F7:
-	case GE_CMD_UNKNOWN_F8:
-	case GE_CMD_UNKNOWN_F9:
 	case GE_CMD_UNKNOWN_FA:
 	case GE_CMD_UNKNOWN_FB:
 	case GE_CMD_UNKNOWN_FC:
@@ -1875,49 +1935,31 @@ void GLES_GPU::DoBlockTransfer() {
 		return;
 	}
 
-	// Do the copy! (Hm, if we detect a drawn video frame (see below) then we could maybe skip this?)
-	// Can use GetPointerUnchecked because we checked the addresses above. We could also avoid them
-	// entirely by walking a couple of pointers...
-	if (srcStride == dstStride && width == srcStride) {
-		// Common case in God of War, let's do it all in one chunk.
-		u32 srcLineStartAddr = srcBasePtr + (srcY * srcStride + srcX) * bpp;
-		u32 dstLineStartAddr = dstBasePtr + (dstY * dstStride + dstX) * bpp;
-		const u8 *src = Memory::GetPointerUnchecked(srcLineStartAddr);
-		u8 *dst = Memory::GetPointerUnchecked(dstLineStartAddr);
-		memcpy(dst, src, width * height * bpp);
-	} else {
-		for (int y = 0; y < height; y++) {
-			u32 srcLineStartAddr = srcBasePtr + ((y + srcY) * srcStride + srcX) * bpp;
-			u32 dstLineStartAddr = dstBasePtr + ((y + dstY) * dstStride + dstX) * bpp;
-
+	// Tell the framebuffer manager to take action if possible. If it does the entire thing, let's just return.
+	if (!framebufferManager_.NotifyBlockTransferBefore(dstBasePtr, dstStride, dstX, dstY, srcBasePtr, srcStride, srcX, srcY, width, height, bpp)) {
+		// Do the copy! (Hm, if we detect a drawn video frame (see below) then we could maybe skip this?)
+		// Can use GetPointerUnchecked because we checked the addresses above. We could also avoid them
+		// entirely by walking a couple of pointers...
+		if (srcStride == dstStride && (u32)width == srcStride) {
+			// Common case in God of War, let's do it all in one chunk.
+			u32 srcLineStartAddr = srcBasePtr + (srcY * srcStride + srcX) * bpp;
+			u32 dstLineStartAddr = dstBasePtr + (dstY * dstStride + dstX) * bpp;
 			const u8 *src = Memory::GetPointerUnchecked(srcLineStartAddr);
 			u8 *dst = Memory::GetPointerUnchecked(dstLineStartAddr);
-			memcpy(dst, src, width * bpp);
+			memcpy(dst, src, width * height * bpp);
+		} else {
+			for (int y = 0; y < height; y++) {
+				u32 srcLineStartAddr = srcBasePtr + ((y + srcY) * srcStride + srcX) * bpp;
+				u32 dstLineStartAddr = dstBasePtr + ((y + dstY) * dstStride + dstX) * bpp;
+
+				const u8 *src = Memory::GetPointerUnchecked(srcLineStartAddr);
+				u8 *dst = Memory::GetPointerUnchecked(dstLineStartAddr);
+				memcpy(dst, src, width * bpp);
+			}
 		}
-	}
 
-	// TODO: Notify all overlapping FBOs that they need to reload.
-	framebufferManager_.NotifyBlockTransfer(dstBasePtr, srcBasePtr);
-
-	textureCache_.Invalidate(dstBasePtr + (dstY * dstStride + dstX) * bpp, height * dstStride * bpp, GPU_INVALIDATE_HINT);
-	if (Memory::IsRAMAddress(srcBasePtr) && Memory::IsVRAMAddress(dstBasePtr)) {
-		// TODO: This causes glitches in Tactics Ogre if we don't implement both ways (which will probably be slow...)
-		// The main thing this helps is videos, which will have a matching stride, and zero x/y.
-		if (dstStride == srcStride && dstY == 0 && dstX == 0 && srcX == 0 && srcY == 0) {
-			framebufferManager_.UpdateFromMemory(dstBasePtr, (dstY + height) * dstStride * bpp, true);
-		}
-	}
-	
-	// A few games use this INSTEAD of actually drawing the video image to the screen, they just blast it to
-	// the backbuffer. Detect this and have the framebuffermanager draw the pixels.
-
-	u32 backBuffer = framebufferManager_.PrevDisplayFramebufAddr();
-	u32 displayBuffer = framebufferManager_.DisplayFramebufAddr();
-
-	if (((backBuffer != 0 && dstBasePtr == backBuffer) ||
-		  (displayBuffer != 0 && dstBasePtr == displayBuffer)) &&
-			dstStride == 512 && height == 272) {
-		framebufferManager_.DrawPixels(Memory::GetPointerUnchecked(dstBasePtr), GE_FORMAT_8888, 512);
+		textureCache_.Invalidate(dstBasePtr + (dstY * dstStride + dstX) * bpp, height * dstStride * bpp, GPU_INVALIDATE_HINT);
+		framebufferManager_.NotifyBlockTransferAfter(dstBasePtr, dstStride, dstX, dstY, srcBasePtr, srcStride, srcX, srcY, width, height, bpp);
 	}
 
 #ifndef MOBILE_DEVICE
@@ -1940,17 +1982,113 @@ void GLES_GPU::InvalidateCacheInternal(u32 addr, int size, GPUInvalidationType t
 	else
 		textureCache_.InvalidateAll(type);
 
-	if (type != GPU_INVALIDATE_ALL)
-		framebufferManager_.UpdateFromMemory(addr, size, type == GPU_INVALIDATE_SAFE);
+	if (type != GPU_INVALIDATE_ALL && framebufferManager_.MayIntersectFramebuffer(addr)) {
+		// If we're doing block transfers, we shouldn't need this, and it'll only confuse us.
+		// Vempire invalidates (with writeback) after drawing, but before blitting.
+		if (!g_Config.bBlockTransferGPU || type == GPU_INVALIDATE_SAFE) {
+			framebufferManager_.UpdateFromMemory(addr, size, type == GPU_INVALIDATE_SAFE);
+		}
+	}
 }
 
-void GLES_GPU::UpdateMemory(u32 dest, u32 src, int size) {
-	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
-
-	// Track stray copies of a framebuffer in RAM. MotoGP does this.
-	if (Memory::IsVRAMAddress(src) && Memory::IsRAMAddress(dest)) {
-		framebufferManager_.NotifyFramebufferCopy(src, dest, size);
+void GLES_GPU::PerformMemoryCopyInternal(u32 dest, u32 src, int size) {
+	if (!framebufferManager_.NotifyFramebufferCopy(src, dest, size)) {
+		// We use a little hack for Download/Upload using a VRAM mirror.
+		// Since they're identical we don't need to copy.
+		if (!Memory::IsVRAMAddress(dest) || (dest ^ 0x00400000) != src) {
+			Memory::Memcpy(dest, Memory::GetPointer(src), size);
+		}
 	}
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+}
+
+void GLES_GPU::PerformMemorySetInternal(u32 dest, u8 v, int size) {
+	if (!framebufferManager_.NotifyFramebufferCopy(dest, dest, size, true)) {
+		InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	}
+}
+
+void GLES_GPU::PerformStencilUploadInternal(u32 dest, int size) {
+	framebufferManager_.NotifyStencilUpload(dest, size);
+}
+
+bool GLES_GPU::PerformMemoryCopy(u32 dest, u32 src, int size) {
+	// Track stray copies of a framebuffer in RAM. MotoGP does this.
+	if (framebufferManager_.MayIntersectFramebuffer(src) || framebufferManager_.MayIntersectFramebuffer(dest)) {
+		if (IsOnSeparateCPUThread()) {
+			GPUEvent ev(GPU_EVENT_FB_MEMCPY);
+			ev.fb_memcpy.dst = dest;
+			ev.fb_memcpy.src = src;
+			ev.fb_memcpy.size = size;
+			ScheduleEvent(ev);
+
+			// This is a memcpy, so we need to wait for it to complete.
+			SyncThread();
+		} else {
+			PerformMemoryCopyInternal(dest, src, size);
+		}
+		return true;
+	}
+
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool GLES_GPU::PerformMemorySet(u32 dest, u8 v, int size) {
+	// This may indicate a memset, usually to 0, of a framebuffer.
+	if (framebufferManager_.MayIntersectFramebuffer(dest)) {
+		Memory::Memset(dest, v, size);
+
+		if (IsOnSeparateCPUThread()) {
+			GPUEvent ev(GPU_EVENT_FB_MEMSET);
+			ev.fb_memset.dst = dest;
+			ev.fb_memset.v = v;
+			ev.fb_memset.size = size;
+			ScheduleEvent(ev);
+
+			// We don't need to wait for the framebuffer to be updated.
+		} else {
+			PerformMemorySetInternal(dest, v, size);
+		}
+		return true;
+	}
+
+	// Or perhaps a texture, let's invalidate.
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool GLES_GPU::PerformMemoryDownload(u32 dest, int size) {
+	// Cheat a bit to force a download of the framebuffer.
+	// VRAM + 0x00400000 is simply a VRAM mirror.
+	if (Memory::IsVRAMAddress(dest)) {
+		return gpu->PerformMemoryCopy(dest ^ 0x00400000, dest, size);
+	}
+	return false;
+}
+
+bool GLES_GPU::PerformMemoryUpload(u32 dest, int size) {
+	// Cheat a bit to force an upload of the framebuffer.
+	// VRAM + 0x00400000 is simply a VRAM mirror.
+	if (Memory::IsVRAMAddress(dest)) {
+		return gpu->PerformMemoryCopy(dest, dest ^ 0x00400000, size);
+	}
+	return false;
+}
+
+bool GLES_GPU::PerformStencilUpload(u32 dest, int size) {
+	if (framebufferManager_.MayIntersectFramebuffer(dest)) {
+		if (IsOnSeparateCPUThread()) {
+			GPUEvent ev(GPU_EVENT_FB_STENCIL_UPLOAD);
+			ev.fb_stencil_upload.dst = dest;
+			ev.fb_stencil_upload.size = size;
+			ScheduleEvent(ev);
+		} else {
+			PerformStencilUploadInternal(dest, size);
+		}
+		return true;
+	}
+	return false;
 }
 
 void GLES_GPU::ClearCacheNextFrame() {
@@ -1958,11 +2096,17 @@ void GLES_GPU::ClearCacheNextFrame() {
 }
 
 void GLES_GPU::Resized() {
+	resized_ = true;
 	framebufferManager_.Resized();
 }
 
 void GLES_GPU::ClearShaderCache() {
 	shaderManager_->ClearCache(true);
+}
+
+void GLES_GPU::CleanupBeforeUI() {
+	// Clear any enabled vertex arrays.
+	shaderManager_->DirtyLastShader();
 }
 
 std::vector<FramebufferInfo> GLES_GPU::GetFramebufferList() {
@@ -1977,6 +2121,7 @@ void GLES_GPU::DoState(PointerWrap &p) {
 	// In Freeze-Frame mode, we don't want to do any of this.
 	if (p.mode == p.MODE_READ && !PSP_CoreParameter().frozen) {
 		textureCache_.Clear(true);
+		depalShaderCache_.Clear();
 		transformDraw_.ClearTrackedVertexArrays();
 
 		gstate_c.textureChanged = TEXCHANGE_UPDATED;
@@ -1996,17 +2141,31 @@ bool GLES_GPU::GetCurrentStencilbuffer(GPUDebugBuffer &buffer) {
 	return framebufferManager_.GetCurrentStencilbuffer(buffer);
 }
 
-bool GLES_GPU::GetCurrentTexture(GPUDebugBuffer &buffer) {
+bool GLES_GPU::GetCurrentTexture(GPUDebugBuffer &buffer, int level) {
 	if (!gstate.isTextureMapEnabled()) {
 		return false;
 	}
 
 #ifndef USING_GLES2
+	GPUgstate saved;
+	if (level != 0) {
+		saved = gstate;
+
+		// The way we set textures is a bit complex.  Let's just override level 0.
+		gstate.texsize[0] = gstate.texsize[level];
+		gstate.texaddr[0] = gstate.texaddr[level];
+		gstate.texbufwidth[0] = gstate.texbufwidth[level];
+	}
+
 	textureCache_.SetTexture(true);
-	int w = gstate.getTextureWidth(0);
-	int h = gstate.getTextureHeight(0);
+	int w = gstate.getTextureWidth(level);
+	int h = gstate.getTextureHeight(level);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &w);
 	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+
+	if (level != 0) {
+		gstate = saved;
+	}
 
 	buffer.Allocate(w, h, GE_FORMAT_8888, gstate_c.flipTexture);
 	glPixelStorei(GL_PACK_ALIGNMENT, 4);

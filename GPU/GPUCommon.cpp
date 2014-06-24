@@ -10,6 +10,7 @@
 #include "Core/MemMap.h"
 #include "Core/Host.h"
 #include "Core/Reporting.h"
+#include "Core/HLE/HLE.h"
 #include "Core/HLE/sceKernelMemory.h"
 #include "Core/HLE/sceKernelInterrupt.h"
 #include "Core/HLE/sceKernelThread.h"
@@ -36,6 +37,7 @@ void GPUCommon::Reinitialize() {
 	isbreak = false;
 	drawCompleteTicks = 0;
 	busyTicks = 0;
+	timeSpentStepping_ = 0.0;
 	interruptsEnabled_ = true;
 	UpdateTickEstimate(0);
 }
@@ -214,7 +216,9 @@ u32 GPUCommon::EnqueueList(u32 listpc, u32 stall, int subIntrBase, PSPPointer<Ps
 		//stack = NULL;
 		for (int i = 0; i < DisplayListMaxCount; ++i) {
 			if (dls[i].state != PSP_GE_DL_STATE_NONE && dls[i].state != PSP_GE_DL_STATE_COMPLETED) {
-				if (dls[i].pc == listpc) {
+				// Logically, if the CPU has not interrupted yet, it hasn't seen the latest pc either.
+				// Exit enqueues right after an END, which fails without ignoring pendingInterrupt lists.
+				if (dls[i].pc == listpc && !dls[i].pendingInterrupt) {
 					ERROR_LOG(G3D, "sceGeListEnqueue: can't enqueue, list address %08X already used", listpc);
 					return 0x80000021;
 				}
@@ -444,6 +448,23 @@ u32 GPUCommon::Break(int mode) {
 	return currentList->id;
 }
 
+void GPUCommon::NotifySteppingEnter() {
+	if (g_Config.bShowDebugStats) {
+		time_update();
+		timeSteppingStarted_ = time_now_d();
+	}
+}
+void GPUCommon::NotifySteppingExit() {
+	if (g_Config.bShowDebugStats) {
+		if (timeSteppingStarted_ <= 0.0) {
+			ERROR_LOG(G3D, "Mismatched stepping enter/exit.");
+		}
+		time_update();
+		timeSpentStepping_ += time_now_d() - timeSteppingStarted_;
+		timeSteppingStarted_ = 0.0;
+	}
+}
+
 bool GPUCommon::InterpretList(DisplayList &list) {
 	// Initialized to avoid a race condition with bShowDebugStats changing.
 	double start = 0.0;
@@ -516,7 +537,10 @@ bool GPUCommon::InterpretList(DisplayList &list) {
 
 	if (g_Config.bShowDebugStats) {
 		time_update();
-		gpuStats.msProcessingDisplayLists += time_now_d() - start;
+		double total = time_now_d() - start - timeSpentStepping_;
+		hleSetSteppingTime(timeSpentStepping_);
+		timeSpentStepping_ = 0.0;
+		gpuStats.msProcessingDisplayLists += total;
 	}
 	return gpuState == GPUSTATE_DONE || gpuState == GPUSTATE_ERROR;
 }
@@ -663,8 +687,12 @@ void GPUCommon::ProcessDLQueueInternal() {
 			return;
 		} else {
 			easy_guard guard(listLock);
-			// At the end, we can remove it from the queue and continue.
-			dlQueue.erase(std::remove(dlQueue.begin(), dlQueue.end(), listIndex), dlQueue.end());
+
+			// Some other list could've taken the spot while we dilly-dallied around.
+			if (l.state != PSP_GE_DL_STATE_QUEUED) {
+				// At the end, we can remove it from the queue and continue.
+				dlQueue.erase(std::remove(dlQueue.begin(), dlQueue.end(), listIndex), dlQueue.end());
+			}
 			UpdateTickEstimate(std::max(busyTicks, startingTicks + cyclesExecuted));
 		}
 	}
@@ -694,13 +722,12 @@ void GPUCommon::Execute_Origin(u32 op, u32 diff) {
 
 void GPUCommon::Execute_Jump(u32 op, u32 diff) {
 	easy_guard guard(listLock);
-	const u32 data = op & 0x00FFFFFF;
-	const u32 target = gstate_c.getRelativeAddress(data);
+	const u32 target = gstate_c.getRelativeAddress(op & 0x00FFFFFC);
 	if (Memory::IsValidAddress(target)) {
 		UpdatePC(currentList->pc, target - 4);
 		currentList->pc = target - 4; // pc will be increased after we return, counteract that
 	} else {
-		ERROR_LOG_REPORT(G3D, "JUMP to illegal address %08x - ignoring! data=%06x", target, data);
+		ERROR_LOG_REPORT(G3D, "JUMP to illegal address %08x - ignoring! data=%06x", target, op & 0x00FFFFFF);
 	}
 }
 
@@ -708,13 +735,12 @@ void GPUCommon::Execute_BJump(u32 op, u32 diff) {
 	if (!currentList->bboxResult) {
 		// bounding box jump.
 		easy_guard guard(listLock);
-		const u32 data = op & 0x00FFFFFF;
-		const u32 target = gstate_c.getRelativeAddress(data);
+		const u32 target = gstate_c.getRelativeAddress(op & 0x00FFFFFC);
 		if (Memory::IsValidAddress(target)) {
 			UpdatePC(currentList->pc, target - 4);
 			currentList->pc = target - 4; // pc will be increased after we return, counteract that
 		} else {
-			ERROR_LOG_REPORT(G3D, "BJUMP to illegal address %08x - ignoring! data=%06x", target, data);
+			ERROR_LOG_REPORT(G3D, "BJUMP to illegal address %08x - ignoring! data=%06x", target, op & 0x00FFFFFF);
 		}
 	}
 }
@@ -724,8 +750,7 @@ void GPUCommon::Execute_Call(u32 op, u32 diff) {
 
 	// Saint Seiya needs correct support for relative calls.
 	const u32 retval = currentList->pc + 4;
-	const u32 data = op & 0x00FFFFFF;
-	const u32 target = gstate_c.getRelativeAddress(data);
+	const u32 target = gstate_c.getRelativeAddress(op & 0x00FFFFFC);
 
 	// Bone matrix optimization - many games will CALL a bone matrix (!).
 	if ((Memory::ReadUnchecked_U32(target) >> 24) == GE_CMD_BONEMATRIXDATA) {
@@ -741,7 +766,7 @@ void GPUCommon::Execute_Call(u32 op, u32 diff) {
 	if (currentList->stackptr == ARRAY_SIZE(currentList->stack)) {
 		ERROR_LOG_REPORT(G3D, "CALL: Stack full!");
 	} else if (!Memory::IsValidAddress(target)) {
-		ERROR_LOG_REPORT(G3D, "CALL to illegal address %08x - ignoring! data=%06x", target, data);
+		ERROR_LOG_REPORT(G3D, "CALL to illegal address %08x - ignoring! data=%06x", target, op & 0x00FFFFFF);
 	} else {
 		auto &stackEntry = currentList->stack[currentList->stackptr++];
 		stackEntry.pc = retval;
@@ -759,7 +784,8 @@ void GPUCommon::Execute_Ret(u32 op, u32 diff) {
 	} else {
 		auto &stackEntry = currentList->stack[--currentList->stackptr];
 		gstate_c.offsetAddr = stackEntry.offsetAddr;
-		u32 target = (currentList->pc & 0xF0000000) | (stackEntry.pc & 0x0FFFFFFF);
+		// We always clear the top (uncached/etc.) bits
+		const u32 target = stackEntry.pc & 0x0FFFFFFF;
 		UpdatePC(currentList->pc, target - 4);
 		currentList->pc = target - 4;
 		if (!Memory::IsValidAddress(currentList->pc)) {
@@ -771,16 +797,18 @@ void GPUCommon::Execute_Ret(u32 op, u32 diff) {
 
 void GPUCommon::Execute_End(u32 op, u32 diff) {
 	easy_guard guard(listLock);
-	const u32 data = op & 0x00FFFFFF;
 	const u32 prev = Memory::ReadUnchecked_U32(currentList->pc - 4);
 	UpdatePC(currentList->pc);
+	// Count in a few extra cycles on END.
+	cyclesExecuted += 60;
+
 	switch (prev >> 24) {
 	case GE_CMD_SIGNAL:
 		{
 			// TODO: see http://code.google.com/p/jpcsp/source/detail?r=2935#
 			SignalBehavior behaviour = static_cast<SignalBehavior>((prev >> 16) & 0xFF);
-			int signal = prev & 0xFFFF;
-			int enddata = data & 0xFFFF;
+			const int signal = prev & 0xFFFF;
+			const int enddata = op & 0xFFFF;
 			bool trigger = true;
 			currentList->subIntrToken = signal;
 

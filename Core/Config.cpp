@@ -265,6 +265,7 @@ static ConfigSetting generalSettings[] = {
 	ConfigSetting("HomebrewStore", &g_Config.bHomebrewStore, false, false),
 	ConfigSetting("CheckForNewVersion", &g_Config.bCheckForNewVersion, true),
 	ConfigSetting("Language", &g_Config.sLanguageIni, &DefaultLangRegion),
+	ConfigSetting("ForceLagSync", &g_Config.bForceLagSync, false),
 
 	ReportedConfigSetting("NumWorkerThreads", &g_Config.iNumWorkerThreads, &DefaultNumWorkers),
 	ConfigSetting("EnableAutoLoad", &g_Config.bEnableAutoLoad, false),
@@ -304,6 +305,7 @@ static ConfigSetting cpuSettings[] = {
 
 	ReportedConfigSetting("SeparateIOThread", &g_Config.bSeparateIOThread, true),
 	ConfigSetting("FastMemoryAccess", &g_Config.bFastMemory, true),
+	ReportedConfigSetting("FuncReplacements", &g_Config.bFuncReplacements, true),
 	ReportedConfigSetting("CPUSpeed", &g_Config.iLockedCPUSpeed, 0),
 
 	ConfigSetting(false),
@@ -393,8 +395,10 @@ static ConfigSetting graphicsSettings[] = {
 	// Not really a graphics setting...
 	ReportedConfigSetting("TimerHack", &g_Config.bTimerHack, &DefaultTimerHack),
 	ReportedConfigSetting("AlphaMaskHack", &g_Config.bAlphaMaskHack, false),
-	ReportedConfigSetting("LowQualitySplineBezier", &g_Config.bLowQualitySplineBezier, false),
+	ReportedConfigSetting("SplineBezierQuality", &g_Config.iSplineBezierQuality, 2),
 	ReportedConfigSetting("PostShader", &g_Config.sPostShaderName, "Off"),
+
+	ReportedConfigSetting("MemBlockTransferGPU", &g_Config.bBlockTransferGPU, true),
 
 	ConfigSetting(false),
 };
@@ -403,7 +407,8 @@ static ConfigSetting soundSettings[] = {
 	ConfigSetting("Enable", &g_Config.bEnableSound, true),
 	ConfigSetting("VolumeBGM", &g_Config.iBGMVolume, 7),
 	ConfigSetting("VolumeSFX", &g_Config.iSFXVolume, 7),
-	ConfigSetting("LowLatency", &g_Config.bLowLatencyAudio, false),
+	ConfigSetting("AudioLatency", &g_Config.IaudioLatency, 1),
+	ConfigSetting("SoundSpeedHack", &g_Config.bSoundSpeedHack, false),
 
 	ConfigSetting(false),
 };
@@ -436,8 +441,14 @@ static ConfigSetting controlSettings[] = {
 	ConfigSetting("ShowAnalogStick", &g_Config.bShowTouchAnalogStick, true),
 	ConfigSetting("ShowTouchDpad", &g_Config.bShowTouchDpad, true),
 	ConfigSetting("ShowTouchUnthrottle", &g_Config.bShowTouchUnthrottle, true),
-#if !defined(__SYMBIAN32__) && !defined(IOS) && !defined(MEEGO_EDITION_HARMATTAN)
+#if !defined(__SYMBIAN32__) && !defined(IOS) && !defined(MAEMO)
+#if defined(_WIN32)
+	// A win32 user seeing touch controls is likely using PPSSPP on a tablet. There it makes
+	// sense to default this to on.
+	ConfigSetting("ShowTouchPause", &g_Config.bShowTouchPause, true),
+#else
 	ConfigSetting("ShowTouchPause", &g_Config.bShowTouchPause, false),
+#endif
 #endif
 #if defined(USING_WIN_UI)
 	ConfigSetting("IgnoreWindowsKey", &g_Config.bIgnoreWindowsKey, false),
@@ -567,6 +578,7 @@ static ConfigSetting debuggerSettings[] = {
 
 static ConfigSetting speedHackSettings[] = {
 	ReportedConfigSetting("PrescaleUV", &g_Config.bPrescaleUV, false),
+	ReportedConfigSetting("DisableAlphaTest", &g_Config.bDisableAlphaTest, false),
 
 	ConfigSetting(false),
 };

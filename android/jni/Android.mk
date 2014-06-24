@@ -45,6 +45,7 @@ ARCH_FILES := \
   $(SRC)/Core/MIPS/x86/CompReplace.cpp \
   $(SRC)/Core/MIPS/x86/Asm.cpp \
   $(SRC)/Core/MIPS/x86/Jit.cpp \
+  $(SRC)/Core/MIPS/x86/JitSafeMem.cpp \
   $(SRC)/Core/MIPS/x86/RegCache.cpp \
   $(SRC)/Core/MIPS/x86/RegCacheFPU.cpp \
   $(SRC)/GPU/GLES/VertexDecoderX86.cpp
@@ -137,12 +138,15 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/GPU/GeDisasm.cpp \
   $(SRC)/GPU/Common/IndexGenerator.cpp.arm \
   $(SRC)/GPU/Common/VertexDecoderCommon.cpp.arm \
+  $(SRC)/GPU/Common/TransformCommon.cpp.arm \
   $(SRC)/GPU/Common/TextureDecoder.cpp \
   $(SRC)/GPU/Common/PostShader.cpp \
   $(SRC)/GPU/Debugger/Breakpoints.cpp \
   $(SRC)/GPU/Debugger/Stepping.cpp \
   $(SRC)/GPU/GLES/Framebuffer.cpp \
+  $(SRC)/GPU/GLES/DepalettizeShader.cpp \
   $(SRC)/GPU/GLES/GLES_GPU.cpp.arm \
+  $(SRC)/GPU/GLES/StencilBuffer.cpp.arm \
   $(SRC)/GPU/GLES/TextureCache.cpp.arm \
   $(SRC)/GPU/GLES/TransformPipeline.cpp.arm \
   $(SRC)/GPU/GLES/SoftwareTransform.cpp.arm \
@@ -190,10 +194,12 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Core/Dialog/PSPMsgDialog.cpp \
   $(SRC)/Core/Dialog/PSPNetconfDialog.cpp \
   $(SRC)/Core/Dialog/PSPOskDialog.cpp \
+  $(SRC)/Core/Dialog/PSPScreenshotDialog.cpp \
   $(SRC)/Core/Dialog/PSPPlaceholderDialog.cpp \
   $(SRC)/Core/Dialog/PSPSaveDialog.cpp \
   $(SRC)/Core/Dialog/SavedataParam.cpp \
   $(SRC)/Core/Font/PGF.cpp \
+  $(SRC)/Core/HLE/HLEHelperThread.cpp \
   $(SRC)/Core/HLE/HLETables.cpp \
   $(SRC)/Core/HLE/ReplaceTables.cpp \
   $(SRC)/Core/HLE/HLE.cpp \
@@ -273,6 +279,7 @@ LOCAL_MODULE := ppsspp_jni
 LOCAL_SRC_FILES := \
   $(EXEC_AND_LIB_FILES) \
   $(SRC)/native/android/app-android.cpp \
+  $(SRC)/UI/BackgroundAudio.cpp \
   $(SRC)/UI/DevScreens.cpp \
   $(SRC)/UI/EmuScreen.cpp \
   $(SRC)/UI/MainScreen.cpp \

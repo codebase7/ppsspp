@@ -259,18 +259,24 @@ void SystemInfoScreen::CreateViews() {
 		oglExtensions->Add(new TextView(exts[i]));
 	}
 
-	ViewGroup *eglExtensionsScroll = new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, FILL_PARENT));
-	LinearLayout *eglExtensions = new LinearLayout(ORIENT_VERTICAL);
-	eglExtensions->SetSpacing(0);
-	eglExtensionsScroll->Add(eglExtensions);
-	tabHolder->AddTab("EGL Extensions", eglExtensionsScroll);
-
-	eglExtensions->Add(new ItemHeader("EGL Extensions"));
 	exts.clear();
 	SplitString(g_all_egl_extensions, ' ', exts);
 	std::sort(exts.begin(), exts.end());
-	for (size_t i = 0; i < exts.size(); i++) {
-		eglExtensions->Add(new TextView(exts[i]));
+
+	// If there aren't any EGL extensions, no need to show the tab.
+	if (exts.size() > 0) {
+		ViewGroup *eglExtensionsScroll = new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, FILL_PARENT));
+		LinearLayout *eglExtensions = new LinearLayout(ORIENT_VERTICAL);
+		eglExtensions->SetSpacing(0);
+		eglExtensionsScroll->Add(eglExtensions);
+
+		tabHolder->AddTab("EGL Extensions", eglExtensionsScroll);
+
+		eglExtensions->Add(new ItemHeader("EGL Extensions"));
+
+		for (size_t i = 0; i < exts.size(); i++) {
+			eglExtensions->Add(new TextView(exts[i]));
+		}
 	}
 }
 
@@ -338,7 +344,7 @@ void AddressPromptScreen::UpdatePreviewDigits() {
 	}
 }
 
-void AddressPromptScreen::key(const KeyInput &key) {
+bool AddressPromptScreen::key(const KeyInput &key) {
 	if (key.flags & KEY_DOWN) {
 		if (key.keyCode >= NKCODE_0 && key.keyCode <= NKCODE_9) {
 			AddDigit(key.keyCode - NKCODE_0);
@@ -350,13 +356,13 @@ void AddressPromptScreen::key(const KeyInput &key) {
 		} else if (key.keyCode == NKCODE_ENTER) {
 			OnCompleted(DR_OK);
 			screenManager()->finishDialog(this, DR_OK);
-			return;
 		} else {
-			UIDialogScreen::key(key);
+			return UIDialogScreen::key(key);
 		}
 	} else {
-		UIDialogScreen::key(key);
+		return UIDialogScreen::key(key);
 	}
+	return true;
 }
 
 // Three panes: Block chooser, MIPS view, ARM/x86 view

@@ -270,9 +270,11 @@ int JitBlockCache::GetBlockNumberFromEmuHackOp(MIPSOpcode inst, bool ignoreBad) 
 	}
 
 	int bl = binary_search(blocks_, baseoff, 0, num_blocks_ - 1);
-	if (blocks_[bl].invalid)
+	if (bl >= 0 && blocks_[bl].invalid) {
 		return -1;
-	return bl;
+	} else {
+		return bl;
+	}
 }
 
 MIPSOpcode JitBlockCache::GetEmuHackOpForBlock(int blockNum) const {
@@ -447,7 +449,10 @@ void JitBlockCache::DestroyBlock(int block_num, bool invalidate) {
 	if (b->proxyFor) {
 		for (size_t i = 0; i < b->proxyFor->size(); i++) {
 			int proxied_blocknum = GetBlockNumberFromStartAddress((*b->proxyFor)[i], false);
-			DestroyBlock(proxied_blocknum, invalidate);
+			// If it was already cleared, we don't know which to destroy.
+			if (proxied_blocknum != -1) {
+				DestroyBlock(proxied_blocknum, invalidate);
+			}
 		}
 		b->proxyFor->clear();
 		delete b->proxyFor;

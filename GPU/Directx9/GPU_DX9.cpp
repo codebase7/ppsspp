@@ -654,7 +654,7 @@ void DIRECTX9_GPU::ExecuteOp(u32 op, u32 diff) {
 
 			// After drawing, we advance the vertexAddr (when non indexed) or indexAddr (when indexed).
 			// Some games rely on this, they don't bother reloading VADDR and IADDR.
-			// Q: Are these changed reflected in the real registers? Needs testing.
+			// The VADDR/IADDR registers are NOT updated.
 			if (inds) {
 				int indexSize = 1;
 				if ((gstate.vertType & GE_VTYPE_IDX_MASK) == GE_VTYPE_IDX_16BIT)
@@ -953,89 +953,46 @@ void DIRECTX9_GPU::ExecuteOp(u32 op, u32 diff) {
 	case GE_CMD_LIGHTTYPE2:
 	case GE_CMD_LIGHTTYPE3:
 		break;
-
 	case GE_CMD_LX0:case GE_CMD_LY0:case GE_CMD_LZ0:
-	case GE_CMD_LX1:case GE_CMD_LY1:case GE_CMD_LZ1:
-	case GE_CMD_LX2:case GE_CMD_LY2:case GE_CMD_LZ2:
-	case GE_CMD_LX3:case GE_CMD_LY3:case GE_CMD_LZ3:
-		{
-			int n = cmd - GE_CMD_LX0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightpos[l][c] = getFloat24(data);
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
 	case GE_CMD_LDX0:case GE_CMD_LDY0:case GE_CMD_LDZ0:
-	case GE_CMD_LDX1:case GE_CMD_LDY1:case GE_CMD_LDZ1:
-	case GE_CMD_LDX2:case GE_CMD_LDY2:case GE_CMD_LDZ2:
-	case GE_CMD_LDX3:case GE_CMD_LDY3:case GE_CMD_LDZ3:
-		{
-			int n = cmd - GE_CMD_LDX0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightdir[l][c] = getFloat24(data);
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
 	case GE_CMD_LKA0:case GE_CMD_LKB0:case GE_CMD_LKC0:
+	case GE_CMD_LKS0:  // spot coef ("conv")
+	case GE_CMD_LKO0: // light angle ("cutoff")
+	case GE_CMD_LAC0:
+	case GE_CMD_LDC0:
+	case GE_CMD_LSC0:
+		shaderManager_->DirtyUniform(DIRTY_LIGHT0);
+		break;
+
+	case GE_CMD_LX1:case GE_CMD_LY1:case GE_CMD_LZ1:
+	case GE_CMD_LDX1:case GE_CMD_LDY1:case GE_CMD_LDZ1:
 	case GE_CMD_LKA1:case GE_CMD_LKB1:case GE_CMD_LKC1:
-	case GE_CMD_LKA2:case GE_CMD_LKB2:case GE_CMD_LKC2:
-	case GE_CMD_LKA3:case GE_CMD_LKB3:case GE_CMD_LKC3:
-		{
-			int n = cmd - GE_CMD_LKA0;
-			int l = n / 3;
-			int c = n % 3;
-			gstate_c.lightatt[l][c] = getFloat24(data);
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
-	case GE_CMD_LKS0:
 	case GE_CMD_LKS1:
-	case GE_CMD_LKS2:
-	case GE_CMD_LKS3:
-		{
-			int l = cmd - GE_CMD_LKS0;
-			gstate_c.lightspotCoef[l] = getFloat24(data);
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
-		break;
-
-	case GE_CMD_LKO0:
 	case GE_CMD_LKO1:
-	case GE_CMD_LKO2:
-	case GE_CMD_LKO3:
-		{
-			int l = cmd - GE_CMD_LKO0;
-			gstate_c.lightangle[l] = getFloat24(data);
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
+	case GE_CMD_LAC1:
+	case GE_CMD_LDC1:
+	case GE_CMD_LSC1:
+		shaderManager_->DirtyUniform(DIRTY_LIGHT1);
 		break;
-
-	case GE_CMD_LAC0:case GE_CMD_LAC1:case GE_CMD_LAC2:case GE_CMD_LAC3:
-	case GE_CMD_LDC0:case GE_CMD_LDC1:case GE_CMD_LDC2:case GE_CMD_LDC3:
-	case GE_CMD_LSC0:case GE_CMD_LSC1:case GE_CMD_LSC2:case GE_CMD_LSC3:
-		{
-			float r = (float)(data & 0xff)/255.0f;
-			float g = (float)((data>>8) & 0xff)/255.0f;
-			float b = (float)(data>>16)/255.0f;
-
-			int l = (cmd - GE_CMD_LAC0) / 3;
-			int t = (cmd - GE_CMD_LAC0) % 3;
-			gstate_c.lightColor[t][l][0] = r;
-			gstate_c.lightColor[t][l][1] = g;
-			gstate_c.lightColor[t][l][2] = b;
-			if (diff)
-				shaderManager_->DirtyUniform(DIRTY_LIGHT0 << l);
-		}
+	case GE_CMD_LX2:case GE_CMD_LY2:case GE_CMD_LZ2:
+	case GE_CMD_LDX2:case GE_CMD_LDY2:case GE_CMD_LDZ2:
+	case GE_CMD_LKA2:case GE_CMD_LKB2:case GE_CMD_LKC2:
+	case GE_CMD_LKS2:
+	case GE_CMD_LKO2:
+	case GE_CMD_LAC2:
+	case GE_CMD_LDC2:
+	case GE_CMD_LSC2:
+		shaderManager_->DirtyUniform(DIRTY_LIGHT2);
+		break;
+	case GE_CMD_LX3:case GE_CMD_LY3:case GE_CMD_LZ3:
+	case GE_CMD_LDX3:case GE_CMD_LDY3:case GE_CMD_LDZ3:
+	case GE_CMD_LKA3:case GE_CMD_LKB3:case GE_CMD_LKC3:
+	case GE_CMD_LKS3:
+	case GE_CMD_LKO3:
+	case GE_CMD_LAC3:
+	case GE_CMD_LDC3:
+	case GE_CMD_LSC3:
+		shaderManager_->DirtyUniform(DIRTY_LIGHT3);
 		break;
 
 	case GE_CMD_VIEWPORTX1:
@@ -1091,7 +1048,7 @@ void DIRECTX9_GPU::ExecuteOp(u32 op, u32 diff) {
 	case GE_CMD_COLORTEST:
 	case GE_CMD_COLORTESTMASK:
 		if (diff)
-			shaderManager_->DirtyUniform(DIRTY_COLORMASK);
+			shaderManager_->DirtyUniform(DIRTY_ALPHACOLORMASK);
 		break;
 
 	case GE_CMD_ALPHATEST:
@@ -1358,8 +1315,28 @@ void DIRECTX9_GPU::InvalidateCacheInternal(u32 addr, int size, GPUInvalidationTy
 		framebufferManager_.UpdateFromMemory(addr, size);
 }
 
-void DIRECTX9_GPU::UpdateMemory(u32 dest, u32 src, int size) {
+bool DIRECTX9_GPU::PerformMemoryCopy(u32 dest, u32 src, int size) {
 	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool DIRECTX9_GPU::PerformMemorySet(u32 dest, u8 v, int size) {
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool DIRECTX9_GPU::PerformMemoryDownload(u32 dest, int size) {
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool DIRECTX9_GPU::PerformMemoryUpload(u32 dest, int size) {
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool DIRECTX9_GPU::PerformStencilUpload(u32 dest, int size) {
+	return false;
 }
 
 void DIRECTX9_GPU::ClearCacheNextFrame() {

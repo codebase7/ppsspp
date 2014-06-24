@@ -22,7 +22,10 @@
 #include "GPU/GPUState.h"
 #include "GPU/Math3D.h"
 #include "GPU/Common/VertexDecoderCommon.h"
+#include "GPU/Common/TransformCommon.h"
+#include "GPU/GLES/Framebuffer.h"
 #include "GPU/GLES/ShaderManager.h"
+#include "GPU/GLES/TextureCache.h"
 #include "GPU/GLES/TransformPipeline.h"
 
 // This is the software transform pipeline, which is necessary for supporting RECT
@@ -43,160 +46,6 @@
 //
 
 extern const GLuint glprim[8];
-
-// Check for max first as clamping to max is more common than min when lighting.
-inline float clamp(float in, float min, float max) {
-	return in > max ? max : (in < min ? min : in);
-}
-
-// Convenient way to do precomputation to save the parts of the lighting calculation
-// that's common between the many vertices of a draw call.
-class Lighter {
-public:
-	Lighter(int vertType);
-	void Light(float colorOut0[4], float colorOut1[4], const float colorIn[4], const Vec3f &pos, const Vec3f &normal);
-
-private:
-	Color4 globalAmbient;
-	Color4 materialEmissive;
-	Color4 materialAmbient;
-	Color4 materialDiffuse;
-	Color4 materialSpecular;
-	float specCoef_;
-	// Vec3f viewer_;
-	bool doShadeMapping_;
-	int materialUpdate_;
-};
-
-Lighter::Lighter(int vertType) {
-	if (!gstate.isLightingEnabled())
-		return;
-
-	doShadeMapping_ = gstate.getUVGenMode() == GE_TEXMAP_ENVIRONMENT_MAP;
-	materialEmissive.GetFromRGB(gstate.materialemissive);
-	materialEmissive.a = 0.0f;
-	globalAmbient.GetFromRGB(gstate.ambientcolor);
-	globalAmbient.GetFromA(gstate.ambientalpha);
-	materialAmbient.GetFromRGB(gstate.materialambient);
-	materialAmbient.GetFromA(gstate.materialalpha);
-	materialDiffuse.GetFromRGB(gstate.materialdiffuse);
-	materialDiffuse.a = 1.0f;
-	materialSpecular.GetFromRGB(gstate.materialspecular);
-	materialSpecular.a = 1.0f;
-	specCoef_ = getFloat24(gstate.materialspecularcoef);
-	// viewer_ = Vec3f(-gstate.viewMatrix[9], -gstate.viewMatrix[10], -gstate.viewMatrix[11]);
-	bool hasColor = (vertType & GE_VTYPE_COL_MASK) != 0;
-	materialUpdate_ = hasColor ? gstate.materialupdate & 7 : 0;
-}
-
-void Lighter::Light(float colorOut0[4], float colorOut1[4], const float colorIn[4], const Vec3f &pos, const Vec3f &norm) {
-	Color4 in(colorIn);
-
-	const Color4 *ambient;
-	if (materialUpdate_ & 1)
-		ambient = &in;
-	else
-		ambient = &materialAmbient;
-
-	const Color4 *diffuse;
-	if (materialUpdate_ & 2)
-		diffuse = &in;
-	else
-		diffuse = &materialDiffuse;
-
-	const Color4 *specular;
-	if (materialUpdate_ & 4)
-		specular = &in;
-	else
-		specular = &materialSpecular;
-
-	Color4 lightSum0 = globalAmbient * *ambient + materialEmissive;
-	Color4 lightSum1(0, 0, 0, 0);
-
-	for (int l = 0; l < 4; l++) {
-		// can we skip this light?
-		if (!gstate.isLightChanEnabled(l))
-			continue;
-
-		GELightType type = gstate.getLightType(l);
-		
-		Vec3f toLight(0,0,0);
-		Vec3f lightDir(0,0,0);
-		
-		if (type == GE_LIGHTTYPE_DIRECTIONAL)
-			toLight = Vec3f(gstate_c.lightpos[l]);  // lightdir is for spotlights
-		else
-			toLight = Vec3f(gstate_c.lightpos[l]) - pos;
-
-		bool doSpecular = gstate.isUsingSpecularLight(l);
-		bool poweredDiffuse = gstate.isUsingPoweredDiffuseLight(l);
-		
-		float distanceToLight = toLight.Length();
-		float dot = 0.0f;
-		float angle = 0.0f;
-		float lightScale = 0.0f;
-		
-		if (distanceToLight > 0.0f) {
-			toLight /= distanceToLight;
-			dot = Dot(toLight, norm);
-		}
-		// Clamp dot to zero.
-		if (dot < 0.0f) dot = 0.0f;
-
-		if (poweredDiffuse)
-			dot = powf(dot, specCoef_);
-
-		// Attenuation
-		switch (type) {
-		case GE_LIGHTTYPE_DIRECTIONAL:
-			lightScale = 1.0f;
-			break;
-		case GE_LIGHTTYPE_POINT:
-			lightScale = clamp(1.0f / (gstate_c.lightatt[l][0] + gstate_c.lightatt[l][1]*distanceToLight + gstate_c.lightatt[l][2]*distanceToLight*distanceToLight), 0.0f, 1.0f);
-			break;
-		case GE_LIGHTTYPE_SPOT:
-		case GE_LIGHTTYPE_UNKNOWN:
-			lightDir = gstate_c.lightdir[l];
-			angle = Dot(toLight.Normalized(), lightDir.Normalized());
-			if (angle >= gstate_c.lightangle[l])
-				lightScale = clamp(1.0f / (gstate_c.lightatt[l][0] + gstate_c.lightatt[l][1]*distanceToLight + gstate_c.lightatt[l][2]*distanceToLight*distanceToLight), 0.0f, 1.0f) * powf(angle, gstate_c.lightspotCoef[l]);
-			break;
-		default:
-			// ILLEGAL
-			break;
-		}
-
-		Color4 lightDiff(gstate_c.lightColor[1][l], 0.0f);
-		Color4 diff = (lightDiff * *diffuse) * dot;
-
-		// Real PSP specular
-		Vec3f toViewer(0,0,1);
-		// Better specular
-		// Vec3f toViewer = (viewer - pos).Normalized();
-
-		if (doSpecular) {
-			Vec3f halfVec = (toLight + toViewer);
-			halfVec.Normalize();
-
-			dot = Dot(halfVec, norm);
-			if (dot > 0.0f) {
-				Color4 lightSpec(gstate_c.lightColor[2][l], 0.0f);
-				lightSum1 += (lightSpec * *specular * (powf(dot, specCoef_) * lightScale));
-			}
-		}
-
-		if (gstate.isLightChanEnabled(l)) {
-			Color4 lightAmbient(gstate_c.lightColor[0][l], 0.0f);
-			lightSum0 += (lightAmbient * *ambient + diff) * lightScale;
-		}
-	}
-
-	// 4?
-	for (int i = 0; i < 4; i++) {
-		colorOut0[i] = lightSum0[i] > 1.0f ? 1.0f : lightSum0[i];
-		colorOut1[i] = lightSum1[i] > 1.0f ? 1.0f : lightSum1[i];
-	}
-}
 
 // The verts are in the order:  BR BL TL TR
 static void SwapUVs(TransformedVertex &a, TransformedVertex &b) {
@@ -241,8 +90,7 @@ bool TransformDrawEngine::IsReallyAClear(int numVerts) const {
 	if (transformed[0].x != 0.0f || transformed[0].y != 0.0f)
 		return false;
 
-	u32 matchcolor;
-	memcpy(&matchcolor, transformed[0].color0, 4);
+	u32 matchcolor = transformed[0].color0_32;
 	float matchz = transformed[0].z;
 
 	int bufW = gstate_c.curRTWidth;
@@ -250,9 +98,7 @@ bool TransformDrawEngine::IsReallyAClear(int numVerts) const {
 
 	float prevX = 0.0f;
 	for (int i = 1; i < numVerts; i++) {
-		u32 vcolor;
-		memcpy(&vcolor, transformed[i].color0, 4);
-		if (vcolor != matchcolor || transformed[i].z != matchz)
+		if (transformed[i].color0_32 != matchcolor || transformed[i].z != matchz)
 			return false;
 
 		if ((i & 1) == 0) {
@@ -326,6 +172,8 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 	}
 
 	VertexReader reader(decoded, decVtxFormat, vertType);
+	// We flip in the fragment shader for GE_TEXMAP_TEXTURE_MATRIX.
+	const bool flipV = gstate_c.flipTexture && gstate.getUVGenMode() != GE_TEXMAP_TEXTURE_MATRIX;
 	for (int index = 0; index < maxIndex; index++) {
 		reader.Goto(index);
 
@@ -355,34 +203,40 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 			// Scale UV?
 		} else {
 			// We do software T&L for now
-			float out[3], norm[3];
-			float pos[3], nrm[3];
+			float out[3];
+			float pos[3];
 			Vec3f normal(0, 0, 1);
+			Vec3f worldnormal(0, 0, 1);
 			reader.ReadPos(pos);
-			if (reader.hasNormal())
-				reader.ReadNrm(nrm);
 
 			if (!skinningEnabled) {
 				Vec3ByMatrix43(out, pos, gstate.worldMatrix);
 				if (reader.hasNormal()) {
-					Norm3ByMatrix43(norm, nrm, gstate.worldMatrix);
-					normal = Vec3f(norm).Normalized();
+					reader.ReadNrm(normal.AsArray());
+					if (gstate.areNormalsReversed()) {
+						normal = -normal;
+					}
+					Norm3ByMatrix43(worldnormal.AsArray(), normal.AsArray(), gstate.worldMatrix);
+					worldnormal = worldnormal.Normalized();
 				}
 			} else {
 				float weights[8];
 				reader.ReadWeights(weights);
+				if (reader.hasNormal())
+					reader.ReadNrm(normal.AsArray());
+
 				// Skinning
-				Vec3f psum(0,0,0);
-				Vec3f nsum(0,0,0);
+				Vec3f psum(0, 0, 0);
+				Vec3f nsum(0, 0, 0);
 				for (int i = 0; i < vertTypeGetNumBoneWeights(vertType); i++) {
 					if (weights[i] != 0.0f) {
 						Vec3ByMatrix43(out, pos, gstate.boneMatrix+i*12);
 						Vec3f tpos(out);
 						psum += tpos * weights[i];
 						if (reader.hasNormal()) {
-							Norm3ByMatrix43(norm, nrm, gstate.boneMatrix+i*12);
-							Vec3f tnorm(norm);
-							nsum += tnorm * weights[i];
+							Vec3f norm;
+							Norm3ByMatrix43(norm.AsArray(), normal.AsArray(), gstate.boneMatrix+i*12);
+							nsum += norm * weights[i];
 						}
 					}
 				}
@@ -390,8 +244,12 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 				// Yes, we really must multiply by the world matrix too.
 				Vec3ByMatrix43(out, psum.AsArray(), gstate.worldMatrix);
 				if (reader.hasNormal()) {
-					Norm3ByMatrix43(norm, nsum.AsArray(), gstate.worldMatrix);
-					normal = Vec3f(norm).Normalized();
+					normal = nsum;
+					if (gstate.areNormalsReversed()) {
+						normal = -normal;
+					}
+					Norm3ByMatrix43(worldnormal.AsArray(), normal.AsArray(), gstate.worldMatrix);
+					worldnormal = worldnormal.Normalized();
 				}
 			}
 
@@ -406,7 +264,7 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 			if (gstate.isLightingEnabled()) {
 				float litColor0[4];
 				float litColor1[4];
-				lighter.Light(litColor0, litColor1, unlitColor.AsArray(), out, normal);
+				lighter.Light(litColor0, litColor1, unlitColor.AsArray(), out, worldnormal);
 
 				// Don't ignore gstate.lmode - we should send two colors in that case
 				for (int j = 0; j < 4; j++) {
@@ -469,20 +327,16 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 						break;
 
 					case GE_PROJMAP_NORMALIZED_NORMAL: // Use normalized normal as source
-						if (reader.hasNormal()) {
-							source = Vec3f(norm).Normalized();
-						} else {
+						source = normal.Normalized();
+						if (!reader.hasNormal()) {
 							ERROR_LOG_REPORT(G3D, "Normal projection mapping without normal?");
-							source = Vec3f(0.0f, 0.0f, 1.0f);
 						}
 						break;
 
 					case GE_PROJMAP_NORMAL: // Use non-normalized normal as source!
-						if (reader.hasNormal()) {
-							source = Vec3f(norm);
-						} else {
+						source = normal;
+						if (!reader.hasNormal()) {
 							ERROR_LOG_REPORT(G3D, "Normal projection mapping without normal?");
-							source = Vec3f(0.0f, 0.0f, 1.0f);
 						}
 						break;
 					}
@@ -498,11 +352,11 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 			case GE_TEXMAP_ENVIRONMENT_MAP:
 				// Shade mapping - use two light sources to generate U and V.
 				{
-					Vec3f lightpos0 = Vec3f(gstate_c.lightpos[gstate.getUVLS0()]).Normalized();
-					Vec3f lightpos1 = Vec3f(gstate_c.lightpos[gstate.getUVLS1()]).Normalized();
+					Vec3f lightpos0 = Vec3f(&lighter.lpos[gstate.getUVLS0() * 3]).Normalized();
+					Vec3f lightpos1 = Vec3f(&lighter.lpos[gstate.getUVLS1() * 3]).Normalized();
 
-					uv[0] = (1.0f + Dot(lightpos0, normal))/2.0f;
-					uv[1] = (1.0f + Dot(lightpos1, normal))/2.0f;
+					uv[0] = (1.0f + Dot(lightpos0, worldnormal))/2.0f;
+					uv[1] = (1.0f + Dot(lightpos1, worldnormal))/2.0f;
 					uv[2] = 1.0f;
 				}
 				break;
@@ -525,7 +379,7 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 		memcpy(&transformed[index].x, v, 3 * sizeof(float));
 		transformed[index].fog = fogCoef;
 		memcpy(&transformed[index].u, uv, 3 * sizeof(float));
-		if (gstate_c.flipTexture) {
+		if (flipV) {
 			transformed[index].v = 1.0f - transformed[index].v;
 		}
 		transformed[index].color0_32 = c0.ToRGBA();
@@ -534,13 +388,11 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 
 	// Here's the best opportunity to try to detect rectangles used to clear the screen, and
 	// replace them with real OpenGL clears. This can provide a speedup on certain mobile chips.
-	// Disabled for now - depth does not come out exactly the same.
 	//
 	// An alternative option is to simply ditch all the verts except the first and last to create a single
 	// rectangle out of many. Quite a small optimization though.
-	if (false && maxIndex > 1 && gstate.isModeClear() && prim == GE_PRIM_RECTANGLES && IsReallyAClear(maxIndex)) {
-		u32 clearColor;
-		memcpy(&clearColor, transformed[0].color0, 4);
+	if (maxIndex > 1 && gstate.isModeClear() && prim == GE_PRIM_RECTANGLES && IsReallyAClear(maxIndex)) {
+		u32 clearColor = transformed[0].color0_32;
 		float clearDepth = transformed[0].z;
 		const float col[4] = {
 			((clearColor & 0xFF)) / 255.0f,
@@ -551,22 +403,18 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 
 		bool colorMask = gstate.isClearModeColorMask();
 		bool alphaMask = gstate.isClearModeAlphaMask();
-		glstate.colorMask.set(colorMask, colorMask, colorMask, alphaMask);
-		if (alphaMask) {
-			glstate.stencilTest.set(true);
-			// Clear stencil
-			// TODO: extract the stencilValue properly, see below
-			int stencilValue = 0;
-			glstate.stencilFunc.set(GL_ALWAYS, stencilValue, 255);
-		} else {
-			// Don't touch stencil
-			glstate.stencilTest.set(false);
-		}
-		glstate.scissorTest.set(false);
 		bool depthMask = gstate.isClearModeDepthMask();
+		if (depthMask) {
+			framebufferManager_->SetDepthUpdated();
+		}
 
-		int target = 0;
-		if (colorMask || alphaMask) target |= GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+		// Note that scissor may still apply while clearing.  Turn off other tests for the clear.
+		glstate.stencilTest.disable();
+		glstate.depthTest.disable();
+
+		GLbitfield target = 0;
+		if (colorMask || alphaMask) target |= GL_COLOR_BUFFER_BIT;
+		if (alphaMask) target |= GL_STENCIL_BUFFER_BIT;
 		if (depthMask) target |= GL_DEPTH_BUFFER_BIT;
 
 		glClearColor(col[0], col[1], col[2], col[3]);
@@ -575,9 +423,32 @@ void TransformDrawEngine::SoftwareTransformAndDraw(
 #else
 		glClearDepth(clearDepth);
 #endif
-		glClearStencil(0);  // TODO - take from alpha?
+		// Stencil takes alpha.
+		glClearStencil(clearColor >> 24);
 		glClear(target);
+		framebufferManager_->SetColorUpdated();
 		return;
+	}
+
+	if (gstate_c.flipTexture && transformed[0].v < 0.0f && transformed[0].v > 1.0f - heightFactor) {
+		// Okay, so we're texturing from outside the framebuffer, but inside the texture height.
+		// Breath of Fire 3 does this to access a render surface at +curTextureHeight.
+		const u32 bpp = framebufferManager_->GetTargetFormat() == GE_FORMAT_8888 ? 4 : 2;
+		const u32 fb_size = bpp * framebufferManager_->GetTargetStride() * gstate_c.curTextureHeight;
+		if (textureCache_->SetOffsetTexture(fb_size)) {
+			const float oldWidthFactor = widthFactor;
+			const float oldHeightFactor = heightFactor;
+			widthFactor = (float) w / (float) gstate_c.curTextureWidth;
+			heightFactor = (float) h / (float) gstate_c.curTextureHeight;
+
+			for (int index = 0; index < maxIndex; ++index) {
+				transformed[index].u *= widthFactor / oldWidthFactor;
+				// Inverse it back to scale to the new FBO, and add 1.0f to account for old FBO.
+				transformed[index].v = 1.0f - transformed[index].v - 1.0f;
+				transformed[index].v *= heightFactor / oldHeightFactor;
+				transformed[index].v = 1.0f - transformed[index].v;
+			}
+		}
 	}
 
 	// Step 2: expand rectangles.

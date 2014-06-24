@@ -19,6 +19,7 @@
 // It's improving slowly, though. :)
 
 #include "Common/CommonWindows.h"
+#include "Common/KeyMap.h"
 
 #include <map>
 #include <string>
@@ -84,6 +85,8 @@
 
 static const int numCPUs = 1;
 
+// These are for Unknown's modified "Very Sleepy" profiler with JIT support.
+
 int verysleepy__useSendMessage = 1;
 
 const UINT WM_VERYSLEEPY_MSG = WM_APP + 0x3117;
@@ -92,8 +95,7 @@ const WPARAM VERYSLEEPY_WPARAM_SUPPORTED = 0;
 // Respond TRUE to a message wit this param value after filling in the addr name.
 const WPARAM VERYSLEEPY_WPARAM_GETADDRINFO = 1;
 
-struct VerySleepy_AddrInfo
-{
+struct VerySleepy_AddrInfo {
 	// Always zero for now.
 	int flags;
 	// This is the pointer (always passed as 64 bits.)
@@ -113,11 +115,8 @@ extern InputState input_state;
 #define CURSORUPDATE_INTERVAL_MS 1000
 #define CURSORUPDATE_MOVE_TIMESPAN_MS 500
 
-namespace MainWindow
-{
+namespace MainWindow {
 	HWND hwndMain;
-	HWND hwndDisplay;
-	HWND hwndGameList;
 	TouchInputHandler touchHandler;
 	static HMENU menu;
 
@@ -139,15 +138,10 @@ namespace MainWindow
 
 	// Forward declarations of functions included in this code module:
 	LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
-	LRESULT CALLBACK DisplayProc(HWND, UINT, WPARAM, LPARAM);
 	LRESULT CALLBACK About(HWND, UINT, WPARAM, LPARAM);
 
 	HWND GetHWND() {
 		return hwndMain;
-	}
-
-	HWND GetDisplayHWND() {
-		return hwndDisplay;
 	}
 
 	void Init(HINSTANCE hInstance) {
@@ -157,7 +151,7 @@ namespace MainWindow
 		//Register classes
 		WNDCLASSEX wcex;
 		wcex.cbSize = sizeof(WNDCLASSEX); 
-		wcex.style			= CS_HREDRAW | CS_VREDRAW;
+		wcex.style = CS_PARENTDC;
 		wcex.lpfnWndProc	= (WNDPROC)WndProc;
 		wcex.cbClsExtra		= 0;
 		wcex.cbWndExtra		= 0;
@@ -167,21 +161,13 @@ namespace MainWindow
 		wcex.hbrBackground	= (HBRUSH)GetStockObject(BLACK_BRUSH);
 		wcex.lpszMenuName	= (LPCWSTR)IDR_MENU1;
 		wcex.lpszClassName	= szWindowClass;
-		wcex.hIconSm		= (HICON)LoadImage(hInstance, (LPCTSTR)IDI_PPSSPP, IMAGE_ICON, 16,16,LR_SHARED);
-		RegisterClassEx(&wcex);
-
-		wcex.style = CS_HREDRAW | CS_VREDRAW;
-		wcex.lpfnWndProc = (WNDPROC)DisplayProc;
-		wcex.hIcon = 0;
-		wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-		wcex.lpszMenuName = 0;
-		wcex.lpszClassName = szDisplayClass;
-		wcex.hIconSm = 0;
+		wcex.hIconSm		= (HICON)LoadImage(hInstance, (LPCTSTR)IDI_PPSSPP, IMAGE_ICON, 16, 16, LR_SHARED);
 		RegisterClassEx(&wcex);
 	}
 
 	void SavePosition() {
-		if (g_Config.bFullScreen) return;
+		if (g_Config.bFullScreen)
+			return;
 
 		WINDOWPLACEMENT placement;
 		GetWindowPlacement(hwndMain, &placement);
@@ -209,7 +195,6 @@ namespace MainWindow
 		rcOuter.left = g_Config.iWindowX;
 		rcOuter.top = g_Config.iWindowY;
 	}
-
 
 	static void ShowScreenResolution() {
 		I18NCategory *g = GetI18NCategory("Graphics");
@@ -240,8 +225,6 @@ namespace MainWindow
 		if (!noWindowMovement) {
 			width = rc.right - rc.left;
 			height = rc.bottom - rc.top;
-			// Moves the internal window, not the frame. TODO: Get rid of the internal window.
-			MoveWindow(hwndDisplay, 0, 0, width, height, TRUE);
 			// This is taken care of anyway later, but makes sure that ShowScreenResolution gets the right numbers.
 			// Need to clean all of this up...
 			PSP_CoreParameter().pixelWidth = width;
@@ -284,7 +267,7 @@ namespace MainWindow
 	}
 
 	void CorrectCursor() {
-		bool autoHide = g_Config.bFullScreen && !mouseButtonDown && globalUIState == UISTATE_INGAME;
+		bool autoHide = g_Config.bFullScreen && !mouseButtonDown && GetUIState() == UISTATE_INGAME;
 		if (autoHide && hideCursor) {
 			while (cursorCounter >= 0) {
 				cursorCounter = ShowCursor(FALSE);
@@ -669,7 +652,7 @@ namespace MainWindow
 
 		// TODO: Urgh! Why do we need this here?
 		// The menu is supposed to enable/disable this stuff directly afterward.
-		SetIngameMenuItemStates(globalUIState);
+		SetIngameMenuItemStates(GetUIState());
 
 		DrawMenuBar(hwndMain);
 		UpdateMenus();
@@ -778,11 +761,6 @@ namespace MainWindow
 		RECT rcClient;
 		GetClientRect(hwndMain, &rcClient);
 
-		hwndDisplay = CreateWindowEx(0, szDisplayClass, L"", WS_CHILD | WS_VISIBLE,
-			0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, hwndMain, 0, hInstance, 0);
-		if (!hwndDisplay)
-			return FALSE;
-
 		menu = GetMenu(hwndMain);
 
 #ifdef FINAL
@@ -810,7 +788,7 @@ namespace MainWindow
 
 		W32Util::MakeTopMost(hwndMain, g_Config.bTopMost);
 
-		touchHandler.registerTouchWindow(hwndDisplay);
+		touchHandler.registerTouchWindow(hwndMain);
 
 		WindowsRawInput::Init();
 
@@ -859,7 +837,7 @@ namespace MainWindow
 		}
 
 		browsePauseAfter = false;
-		if (globalUIState == UISTATE_INGAME) {
+		if (GetUIState() == UISTATE_INGAME) {
 			browsePauseAfter = Core_IsStepping();
 			if (!browsePauseAfter)
 				Core_EnableStepping(true);
@@ -880,7 +858,7 @@ namespace MainWindow
 				Core_EnableStepping(false);
 			}
 		} else {
-			if (globalUIState == UISTATE_INGAME || globalUIState == UISTATE_PAUSEMENU) {
+			if (GetUIState() == UISTATE_INGAME || GetUIState() == UISTATE_PAUSEMENU) {
 				Core_EnableStepping(false);
 			}
 
@@ -921,29 +899,43 @@ namespace MainWindow
 		}
 	}
 
-	LRESULT CALLBACK DisplayProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 		// Only apply a factor > 1 in windowed mode.
 		int factor = !IsZoomed(GetHWND()) && !g_Config.bFullScreen && g_Config.iWindowWidth < (480 + 80) ? 2 : 1;
+		int wmId, wmEvent;
+		std::string fn;
+		static bool noFocusPause = false;	// TOGGLE_PAUSE state to override pause on lost focus
+		static bool firstErase = true;
 
 		switch (message) {
-		case WM_ACTIVATE:
-			if (wParam == WA_ACTIVE || wParam == WA_CLICKACTIVE) {
-				g_activeWindow = WINDOW_MAINWINDOW;
-			}
-			break;
-
-		case WM_SETFOCUS:
-			break;
-
 		case WM_SIZE:
+			SavePosition();
+			ResizeDisplay();
 			break;
+
+		case WM_GETMINMAXINFO:
+			{
+				MINMAXINFO *minmax = reinterpret_cast<MINMAXINFO *>(lParam);
+				RECT rc = { 0 };
+				rc.right = 480;
+				rc.bottom = 272;
+				AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, TRUE);
+				minmax->ptMinTrackSize.x = rc.right - rc.left;
+				minmax->ptMinTrackSize.y = rc.bottom - rc.top;
+			}
+			return 0;
 
 		case WM_ERASEBKGND:
-			return DefWindowProc(hWnd, message, wParam, lParam);
+			if (firstErase) {
+				firstErase = false;
+				// Paint black on first erase while OpenGL stuff is loading
+				return DefWindowProc(hWnd, message, wParam, lParam);
+			}
+			// Then never erase, let the OpenGL drawing take care of everything.
+			return 1;
 
 		// Poor man's touch - mouse input. We send the data both as an input_state pointer,
 		// and as asynchronous touch events for minimal latency.
-
 		case WM_LBUTTONDOWN:
 			if (!touchHandler.hasTouch() ||
 				(GetMessageExtraInfo() & MOUSEEVENTF_MASK_PLUS_PENTOUCH) != MOUSEEVENTF_FROMTOUCH_NOPEN)
@@ -1030,24 +1022,6 @@ namespace MainWindow
 				return 0;
 			}
 
-		case WM_PAINT:
-			return DefWindowProc(hWnd, message, wParam, lParam);
-
-		default:
-			return DefWindowProc(hWnd, message, wParam, lParam);
-		}
-		return 0;
-	}
-	
-	LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)	{
-		int wmId, wmEvent;
-		std::string fn;
-		static bool noFocusPause = false;	// TOGGLE_PAUSE state to override pause on lost focus
-
-		switch (message) {
-		case WM_CREATE:
-			break;
-			
 		case WM_ACTIVATE:
 			{
 				bool pause = true;
@@ -1055,7 +1029,7 @@ namespace MainWindow
 					g_activeWindow = WINDOW_MAINWINDOW;
 					pause = false;
 				}
-				if (!noFocusPause && g_Config.bPauseOnLostFocus && globalUIState == UISTATE_INGAME) {
+				if (!noFocusPause && g_Config.bPauseOnLostFocus && GetUIState() == UISTATE_INGAME) {
 					if (pause != Core_IsStepping()) {	// != is xor for bools
 						if (disasmWindow[0])
 							SendMessage(disasmWindow[0]->GetDlgHandle(), WM_COMMAND, IDC_STOPGO, 0);
@@ -1072,11 +1046,6 @@ namespace MainWindow
 
 		case WM_MOVE:
 			SavePosition();
-			break;
-
-		case WM_SIZE:
-			SavePosition();
-			ResizeDisplay();
 			break;
 
 		case WM_TIMER:
@@ -1140,7 +1109,7 @@ namespace MainWindow
 					break;
 
 				case ID_TOGGLE_PAUSE:
-					if (globalUIState == UISTATE_PAUSEMENU) {
+					if (GetUIState() == UISTATE_PAUSEMENU) {
 						// Causes hang
 						//NativeMessageReceived("run", "");
 
@@ -1175,6 +1144,7 @@ namespace MainWindow
 					NativeMessageReceived("reset", "");
 					Core_EnableStepping(false);
 					break;
+
 				case ID_EMULATION_SWITCH_UMD:
 					UmdSwitchAction();
 					break;
@@ -1204,6 +1174,15 @@ namespace MainWindow
 					break;
 				}
 
+				case ID_FILE_SAVESTATE_NEXT_SLOT_HC:
+				{
+					if (KeyMap::g_controllerMap[VIRTKEY_NEXT_SLOT].begin() == KeyMap::g_controllerMap[VIRTKEY_NEXT_SLOT].end())
+					{ 
+						SaveState::NextSlot();
+					}
+					break;
+				}
+
 				case ID_FILE_SAVESTATE_SLOT_1: g_Config.iCurrentStateSlot = 0; break;
 				case ID_FILE_SAVESTATE_SLOT_2: g_Config.iCurrentStateSlot = 1; break;
 				case ID_FILE_SAVESTATE_SLOT_3: g_Config.iCurrentStateSlot = 2; break;
@@ -1211,14 +1190,37 @@ namespace MainWindow
 				case ID_FILE_SAVESTATE_SLOT_5: g_Config.iCurrentStateSlot = 4; break;
 
 				case ID_FILE_QUICKLOADSTATE:
+				{
 					SetCursor(LoadCursor(0, IDC_WAIT));
 					SaveState::LoadSlot(g_Config.iCurrentStateSlot, SaveStateActionFinished);
 					break;
+				}
 
+				case ID_FILE_QUICKLOADSTATE_HC:
+				{
+					if (KeyMap::g_controllerMap[VIRTKEY_LOAD_STATE].begin() == KeyMap::g_controllerMap[VIRTKEY_LOAD_STATE].end())
+					{
+						SetCursor(LoadCursor(0, IDC_WAIT));
+						SaveState::LoadSlot(g_Config.iCurrentStateSlot, SaveStateActionFinished);
+					}
+					break;
+				}
 				case ID_FILE_QUICKSAVESTATE:
+				{
 					SetCursor(LoadCursor(0, IDC_WAIT));
 					SaveState::SaveSlot(g_Config.iCurrentStateSlot, SaveStateActionFinished);
 					break;
+				}
+
+				case ID_FILE_QUICKSAVESTATE_HC:
+				{
+					if (KeyMap::g_controllerMap[VIRTKEY_SAVE_STATE].begin() == KeyMap::g_controllerMap[VIRTKEY_SAVE_STATE].end())
+					{
+						SetCursor(LoadCursor(0, IDC_WAIT));
+						SaveState::SaveSlot(g_Config.iCurrentStateSlot, SaveStateActionFinished);
+						break;
+					}
+				}
 
 				case ID_OPTIONS_LANGUAGE:
 					NativeMessageReceived("language screen", "");
@@ -1822,18 +1824,18 @@ namespace MainWindow
 		static GlobalUIState lastGlobalUIState = UISTATE_PAUSEMENU;
 		static CoreState lastCoreState = CORE_ERROR;
 
-		if (lastGlobalUIState == globalUIState && lastCoreState == coreState)
+		if (lastGlobalUIState == GetUIState() && lastCoreState == coreState)
 			return;
 
 		lastCoreState = coreState;
-		lastGlobalUIState = globalUIState;
+		lastGlobalUIState = GetUIState();
 
 		HMENU menu = GetMenu(GetHWND());
 
-		bool isPaused = Core_IsStepping() && globalUIState == UISTATE_INGAME;
+		bool isPaused = Core_IsStepping() && GetUIState() == UISTATE_INGAME;
 		TranslateMenuItem(ID_TOGGLE_PAUSE, L"\tF8", isPaused ? "Run" : "Pause");
 
-		SetIngameMenuItemStates(globalUIState);
+		SetIngameMenuItemStates(GetUIState());
 		EnableMenuItem(menu, ID_DEBUG_LOG, !g_Config.bEnableLogging);
 	}
 
@@ -1862,13 +1864,13 @@ namespace MainWindow
 	}
 
 	void Update() {
-		InvalidateRect(hwndDisplay,0,0);
-		UpdateWindow(hwndDisplay);
+		InvalidateRect(hwndMain,0,0);
+		UpdateWindow(hwndMain);
 		SendMessage(hwndMain,WM_SIZE,0,0);
 	}
 
 	void Redraw() {
-		InvalidateRect(hwndDisplay,0,0);
+		InvalidateRect(hwndMain, 0, 0);
 	}
 
 	void SaveStateActionFinished(bool result, void *userdata) {

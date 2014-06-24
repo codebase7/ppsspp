@@ -30,7 +30,7 @@
 #define	DEBUG_LEVEL   5  // Detailed debugging - might make things slow.
 #define	VERBOSE_LEVEL 6  // Noisy debugging - sometimes needed but usually unimportant.
 
-#if !defined(_WIN32) && !defined(PANDORA)
+#if !defined(_WIN32)
 #if defined(MAEMO)
        //ucontext.h will be then skipped
        #define _SYS_UCONTEXT_H 1
@@ -124,12 +124,16 @@ void GenericLog(LOGTYPES_LEVELS level, LOGTYPES_TYPE type,
 					   __LINE__, __FILE__, __TIME__); \
 		if (!PanicYesNo("*** Assertion (see log)***\n")) {Crash();} \
 	}
+#ifdef __SYMBIAN32__
+#define _dbg_assert_msg_(_t_, _a_, ...) if (!(_a_)) ERROR_LOG(_t_, __VA_ARGS__);
+#else
 #define _dbg_assert_msg_(_t_, _a_, ...)\
 	if (!(_a_)) {\
 		printf(__VA_ARGS__); \
 		ERROR_LOG(_t_, __VA_ARGS__); \
 		if (!PanicYesNo(__VA_ARGS__)) {Crash();} \
 	}
+#endif
 #define _dbg_update_() ; //Host_UpdateLogDisplay();
 
 #else // not debug

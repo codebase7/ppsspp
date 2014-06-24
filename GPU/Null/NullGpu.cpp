@@ -385,7 +385,6 @@ void NullGPU::ExecuteOp(u32 op, u32 diff) {
 			int c = n % 3;
 			float val = getFloat24(data);
 			DEBUG_LOG(G3D,"DL Light %i %c pos: %f", l, c+'X', val);
-			gstate_c.lightpos[l][c] = val;
 		}
 		break;
 
@@ -399,7 +398,6 @@ void NullGPU::ExecuteOp(u32 op, u32 diff) {
 			int c = n % 3;
 			float val = getFloat24(data);
 			DEBUG_LOG(G3D,"DL Light %i %c dir: %f", l, c+'X', val);
-			gstate_c.lightdir[l][c] = val;
 		}
 		break;
 
@@ -413,7 +411,6 @@ void NullGPU::ExecuteOp(u32 op, u32 diff) {
 			int c = n % 3;
 			float val = getFloat24(data);
 			DEBUG_LOG(G3D,"DL Light %i %c att: %f", l, c+'X', val);
-			gstate_c.lightatt[l][c] = val;
 		}
 		break;
 
@@ -428,10 +425,8 @@ void NullGPU::ExecuteOp(u32 op, u32 diff) {
 
 			int l = (cmd - GE_CMD_LAC0) / 3;
 			int t = (cmd - GE_CMD_LAC0) % 3;
-			gstate_c.lightColor[t][l][0] = r;
-			gstate_c.lightColor[t][l][1] = g;
-			gstate_c.lightColor[t][l][2] = b;
-		}
+			// DEBUG_LOG(G3D, "DL Light color %i %c att: %f", l, c + 'X', val);
+	}
 		break;
 
 	case GE_CMD_VIEWPORTX1:
@@ -662,7 +657,30 @@ void NullGPU::InvalidateCache(u32 addr, int size, GPUInvalidationType type) {
 	// Nothing to invalidate.
 }
 
-void NullGPU::UpdateMemory(u32 dest, u32 src, int size) {
+bool NullGPU::PerformMemoryCopy(u32 dest, u32 src, int size) {
 	// Nothing to update.
 	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool NullGPU::PerformMemorySet(u32 dest, u8 v, int size) {
+	// Nothing to update.
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool NullGPU::PerformMemoryDownload(u32 dest, int size) {
+	// Nothing to update.
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool NullGPU::PerformMemoryUpload(u32 dest, int size) {
+	// Nothing to update.
+	InvalidateCache(dest, size, GPU_INVALIDATE_HINT);
+	return false;
+}
+
+bool NullGPU::PerformStencilUpload(u32 dest, int size) {
+	return false;
 }

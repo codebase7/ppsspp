@@ -183,6 +183,7 @@
     <ClCompile Include="Dialog\PSPOskDialog.cpp" />
     <ClCompile Include="Dialog\PSPPlaceholderDialog.cpp" />
     <ClCompile Include="Dialog\PSPSaveDialog.cpp" />
+    <ClCompile Include="Dialog\PSPScreenshotDialog.cpp" />
     <ClCompile Include="Dialog\SavedataParam.cpp" />
     <ClCompile Include="ELF\ElfReader.cpp" />
     <ClCompile Include="ELF\ParamSFO.cpp" />
@@ -198,6 +199,7 @@
     <ClCompile Include="Font\PGF.cpp" />
     <ClCompile Include="HDRemaster.cpp" />
     <ClCompile Include="HLE\HLE.cpp" />
+    <ClCompile Include="HLE\HLEHelperThread.cpp" />
     <ClCompile Include="HLE\HLETables.cpp" />
     <ClCompile Include="HLE\proAdhoc.cpp" />
     <ClCompile Include="HLE\ReplaceTables.cpp" />
@@ -401,6 +403,7 @@
     <ClCompile Include="MIPS\x86\CompLoadStore.cpp" />
     <ClCompile Include="MIPS\x86\CompReplace.cpp" />
     <ClCompile Include="MIPS\x86\CompVFPU.cpp" />
+    <ClCompile Include="MIPS\x86\JitSafeMem.cpp" />
     <ClCompile Include="MIPS\x86\RegCacheFPU.cpp" />
     <ClCompile Include="MIPS\x86\Jit.cpp" />
     <ClCompile Include="MIPS\x86\RegCache.cpp" />
@@ -453,6 +456,7 @@
     <ClInclude Include="Dialog\PSPOskDialog.h" />
     <ClInclude Include="Dialog\PSPPlaceholderDialog.h" />
     <ClInclude Include="Dialog\PSPSaveDialog.h" />
+    <ClInclude Include="Dialog\PSPScreenshotDialog.h" />
     <ClInclude Include="Dialog\SavedataParam.h" />
     <ClInclude Include="ELF\ElfReader.h" />
     <ClInclude Include="ELF\ElfTypes.h" />
@@ -469,6 +473,7 @@
     <ClInclude Include="HDRemaster.h" />
     <ClInclude Include="HLE\FunctionWrappers.h" />
     <ClInclude Include="HLE\HLE.h" />
+    <ClInclude Include="HLE\HLEHelperThread.h" />
     <ClInclude Include="HLE\HLETables.h" />
     <ClInclude Include="HLE\KernelWaitHelpers.h" />
     <ClInclude Include="HLE\proAdhoc.h" />
@@ -596,6 +601,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="MIPS\x86\Asm.h" />
+    <ClInclude Include="MIPS\x86\JitSafeMem.h" />
     <ClInclude Include="MIPS\x86\RegCacheFPU.h" />
     <ClInclude Include="MIPS\x86\Jit.h" />
     <ClInclude Include="MIPS\x86\RegCache.h" />

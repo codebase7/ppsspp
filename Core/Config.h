@@ -72,13 +72,19 @@ public:
 	bool bTopMost;
 	std::string sFont;
 	bool bIgnoreWindowsKey;
-	bool bEscapeExitsEmulator;
 #endif
+
+#if !defined(MOBILE_DEVICE)
+	bool bPauseExitsEmulator;
+#endif
+
 	// Core
 	bool bIgnoreBadMemAccess;
 	bool bFastMemory;
 	bool bJit;
 	bool bCheckForNewVersion;
+	bool bForceLagSync;
+	bool bFuncReplacements;
 
 	// Definitely cannot be changed while game is running.
 	bool bSeparateCPUThread;
@@ -139,12 +145,13 @@ public:
 	bool bAlwaysDepthWrite;
 	bool bTimerHack;
 	bool bAlphaMaskHack;
-	bool bLowQualitySplineBezier;
+	bool bBlockTransferGPU;
+	int iSplineBezierQuality; // 0 = low , 1 = Intermediate , 2 = High
 	std::string sPostShaderName;  // Off for off.
 
 	// Sound
 	bool bEnableSound;
-	bool bLowLatencyAudio;
+	int IaudioLatency; // 0 = low , 1 = medium(default) , 2 = high
 	int iSFXVolume;
 	int iBGMVolume;
 
@@ -232,7 +239,7 @@ public:
 	bool bShowTouchAnalogStick;
 	bool bShowTouchDpad;
 
-#if !defined(__SYMBIAN32__) && !defined(IOS) && !defined(MEEGO_EDITION_HARMATTAN)
+#if !defined(__SYMBIAN32__) && !defined(IOS) && !defined(MAEMO)
 	bool bShowTouchPause;
 #endif
 
@@ -247,6 +254,7 @@ public:
 	//   * Still has major problems so off by default - need to store tex scale/offset per DeferredDrawCall, 
 	//     which currently isn't done so if texscale/offset isn't static (like in Tekken 6) things go wrong.
 	bool bPrescaleUV;
+	bool bDisableAlphaTest;  // Helps PowerVR immensely, breaks some graphics
 	// End GLES hacks.
 
 	// Risky JIT optimizations

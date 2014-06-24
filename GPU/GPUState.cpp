@@ -270,7 +270,7 @@ struct GPUStateCache_v0
 };
 
 void GPUStateCache::DoState(PointerWrap &p) {
-	auto s = p.Section("GPUStateCache", 0, 1);
+	auto s = p.Section("GPUStateCache", 0, 3);
 	if (!s) {
 		// Old state, this was not versioned.
 		GPUStateCache_v0 old;
@@ -302,21 +302,39 @@ void GPUStateCache::DoState(PointerWrap &p) {
 		p.Do(flipTexture);
 	}
 
-	p.Do(lightpos);
-	p.Do(lightdir);
-	p.Do(lightatt);
-	p.Do(lightColor);
-	p.Do(lightangle);
-	p.Do(lightspotCoef);
+	// needShaderTexClamp doesn't need to be saved.
+
+	if (s >= 3) {
+		p.Do(textureSimpleAlpha);
+	} else {
+		textureSimpleAlpha = false;
+	}
+
+	if (s < 2) {
+		float l12[12];
+		float l4[4];
+		p.Do(l12);  // lightpos
+		p.Do(l12);  // lightdir
+		p.Do(l12);  // lightattr
+		p.Do(l12);  // lightcol0
+		p.Do(l12);  // lightcol1
+		p.Do(l12);  // lightcol2
+		p.Do(l4);    // lightangle
+		p.Do(l4);  // lightspot
+	}
+
 	p.Do(morphWeights);
 
 	p.Do(curTextureWidth);
 	p.Do(curTextureHeight);
 	p.Do(actualTextureHeight);
+	// curTextureXOffset and curTextureYOffset don't need to be saved.  Well, the above don't either...
 
 	p.Do(vpWidth);
 	p.Do(vpHeight);
 
 	p.Do(curRTWidth);
 	p.Do(curRTHeight);
+
+	// curRTBufferWidth, curRTBufferHeight, and cutRTOffsetX don't need to be saved.
 }

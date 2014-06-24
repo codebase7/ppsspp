@@ -17,10 +17,11 @@
 
 #include "Core/MemMap.h"
 #include "Core/Reporting.h"
-#include "../MIPS/MIPSTables.h"
+#include "Core/MIPS/MIPSTables.h"
 #include "ElfReader.h"
-#include "../Debugger/SymbolMap.h"
-#include "../HLE/sceKernelMemory.h"
+#include "Core/Debugger/Breakpoints.h"
+#include "Core/Debugger/SymbolMap.h"
+#include "Core/HLE/sceKernelMemory.h"
 
 
 const char *ElfReader::GetSectionName(int section)
@@ -92,7 +93,7 @@ bool ElfReader::LoadRelocations(Elf32_Rel *rels, int numRelocs)
 			continue;
 		}
 
-		u32 op = Memory::Read_Instruction(addr).encoding;
+		u32 op = Memory::Read_Instruction(addr, true).encoding;
 
 		const bool log = false;
 		//log=true;
@@ -305,7 +306,7 @@ void ElfReader::LoadRelocations2(int rel_seg)
 				ERROR_LOG_REPORT(LOADER, "Rel2: invalid lo16 type! %x", flag);
 			}
 
-			op = Memory::Read_Instruction(rel_offset).encoding;
+			op = Memory::Read_Instruction(rel_offset, true).encoding;
 			DEBUG_LOG(LOADER, "Rel2: %5d: CMD=0x%04X flag=%x type=%d off_seg=%d offset=%08x addr_seg=%d op=%08x\n", rcount, cmd, flag, type, off_seg, rel_base, addr_seg, op);
 
 			switch(type){
@@ -442,6 +443,7 @@ int ElfReader::LoadInto(u32 loadAddress)
 			}
 
 			memcpy(dst, src, srcSize);
+			CBreakPoints::ExecMemCheck(writeAddr, true, dstSize, currentMIPS->pc);
 			DEBUG_LOG(LOADER,"Loadable Segment Copied to %08x, size %08x", writeAddr, (u32)p->p_memsz);
 		}
 	}

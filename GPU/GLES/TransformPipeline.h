@@ -174,7 +174,12 @@ private:
 	void DoFlush();
 	void SoftwareTransformAndDraw(int prim, u8 *decoded, LinkedShader *program, int vertexCount, u32 vertexType, void *inds, int indexType, const DecVtxFormat &decVtxFormat, int maxIndex);
 	void ApplyDrawState(int prim);
+	void ApplyBlendState();
+	bool ApplyShaderBlending();
+	inline void ResetShaderBlending();
 	bool IsReallyAClear(int numVerts) const;
+	GLuint AllocateBuffer();
+	void FreeBuffer(GLuint buf);
 
 	// Preprocessing for spline/bezier
 	u32 NormalizeVertices(u8 *outPtr, u8 *bufPtr, const u8 *inPtr, int lowerBound, int upperBound, u32 vertType);
@@ -223,10 +228,7 @@ private:
 
 	// Vertex buffer objects
 	// Element buffer objects
-	enum { NUM_VBOS = 128 };
-	GLuint vbo_[NUM_VBOS];
-	GLuint ebo_[NUM_VBOS];
-	int curVbo_;
+	std::vector<GLuint> bufferNameCache_;
 
 	// Other
 	ShaderManager *shaderManager_;
@@ -243,42 +245,6 @@ private:
 	u32 dcid_;
 
 	UVScale *uvScale;
-};
 
-// Only used by SW transform
-struct Color4 {
-	float r, g, b, a;
-
-	Color4() : r(0), g(0), b(0), a(0) { }
-	Color4(float _r, float _g, float _b, float _a=1.0f)
-		: r(_r), g(_g), b(_b), a(_a) {
-	}
-	Color4(const float in[4]) {r=in[0];g=in[1];b=in[2];a=in[3];}
-	Color4(const float in[3], float alpha) {r=in[0];g=in[1];b=in[2];a=alpha;}
-
-	const float &operator [](int i) const {return *(&r + i);}
-
-	Color4 operator *(float f) const {
-		return Color4(f*r,f*g,f*b,f*a);
-	}
-	Color4 operator *(const Color4 &c) const {
-		return Color4(r*c.r,g*c.g,b*c.b,a*c.a);
-	}
-	Color4 operator +(const Color4 &c) const {
-		return Color4(r+c.r,g+c.g,b+c.b,a+c.a);
-	}
-	void operator +=(const Color4 &c) {
-		r+=c.r;
-		g+=c.g;
-		b+=c.b;
-		a+=c.a;
-	}
-	void GetFromRGB(u32 col) {
-		b = ((col>>16) & 0xff)/255.0f;
-		g = ((col>>8) & 0xff)/255.0f;
-		r = ((col>>0) & 0xff)/255.0f;
-	}
-	void GetFromA(u32 col) {
-		a = (col&0xff)/255.0f;
-	}
+	bool fboTexBound_;
 };
