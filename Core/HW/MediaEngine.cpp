@@ -290,7 +290,7 @@ bool MediaEngine::openContext() {
 		return false;
 
 	setVideoDim();
-	m_audioContext = new SimpleAudio(m_audioType);
+	m_audioContext = new SimpleAudio(m_audioType, 280);
 	m_isVideoEnd = false;
 	m_mpegheaderReadPos++;
 	av_seek_frame(m_pFormatCtx, m_videoStream, 0, 0);
