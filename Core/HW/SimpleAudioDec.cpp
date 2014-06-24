@@ -102,9 +102,10 @@ void SimpleAudio::Init(int wav_bytes_per_packet) {
 }
 
 bool SimpleAudio::OpenCodec() {
+	int retval = 0;	// Avoid the returned result causing undefined behavior due to an uninitilized variable if we don't have ffmpeg support.
 #ifdef USE_FFMPEG
 	AVDictionary *opts = 0;
-	int retval = avcodec_open2(codecCtx_, codec_, &opts);
+	retval = avcodec_open2(codecCtx_, codec_, &opts);
 	if (retval < 0) {
 		ERROR_LOG(ME, "Failed to open codec: retval = %i", retval);
 	}
